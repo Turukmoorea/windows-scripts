@@ -1,1 +1,2 @@
-# windows-scripts
+# Welcome to windows-scripts!
+This repository provides my private collection of scripts for Windows. Whether you're a system administrator regularly deploying new software on servers or a Windows enthusiast looking to automate your personal environment, these scripts are designed to simplify and speed up the installation process.
