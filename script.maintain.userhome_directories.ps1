@@ -65,23 +65,28 @@ function PreValidate-Paths {
 # Function to validate empty directories or directories without AD-user
 function Validate-Paths {
     param (
-        [string[]]$subDirectoryPaths  # Array of subdirectory paths to validate.
+        [string[]]$Paths  # Array of subdirectory paths to validate.
     )
     
     $results = @()
     
     # For each subdirectory path, get the ACL and format the output.
-    foreach ($path in $subDirectoryPaths) {
+    foreach ($path in $Paths) {
+        # Check if the directory is empty
+        $items = Get-ChildItem -Path $path -Force -ErrorAction SilentlyContinue
+        $isEmpty = -not ($items | Where-Object { $_.PSIsContainer -or $_.Length -gt 0 })
+        
         $acl = Get-Acl -Path $path
         $aclEntries = $acl.Access | ForEach-Object {
             "$($_.IdentityReference)"
         }
         $aclString = $aclEntries -join ", "
         
-        # Create a custom object with the path and its ACL string.
+        # Create a custom object with the path, its empty status, and its ACL string.
         $results += [PSCustomObject]@{
-            Path = [System.IO.Path]::GetFileName($path)  # Only show the directory name.
-            ACL = $aclString
+            Path  = [System.IO.Path]::GetFileName($path)  # Only show the directory name.
+            Empty = $isEmpty
+            ACL   = $aclString
         }
     }
     
@@ -100,7 +105,8 @@ function Display-Paths {
         Write-Output "$($paths.Count) $message"
         $i = 0
         $paths | ForEach-Object {
-            Write-Output "   $i. $($_.Path) - ACL: $($_.ACL)"
+            $emptyFolder = if ($_.Empty -eq $true) {"empty"} else {"content"}
+            Write-Output "   $i. $($_.Path) - $emptyFolder - ACL: $($_.ACL)"
             $i++
         }
     } else {
@@ -159,7 +165,7 @@ $validSubDirectoryPaths = $preValidationResult.Valid | ForEach-Object {
 }
 
 # Validate the subdirectories with empty directory and without active user.
-$validationResult = Validate-Paths -subDirectoryPaths $validSubDirectoryPaths
+$validationResult = Validate-Paths -Paths $validSubDirectoryPaths
 
 # Display the list of valid subdirectories along with their ACLs.
 Display-Paths -paths $validationResult -message "founded directories in ${parentPath}:"
