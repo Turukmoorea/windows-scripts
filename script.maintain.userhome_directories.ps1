@@ -64,6 +64,7 @@ function PreValidate-Paths {
 
 function Validate-Paths {
     param (
+        [string]$emptyDirectories,  # A string parameter to specify how to handle empty directories.
         [string[]]$Paths  # Array of subdirectory paths to validate.
     )
     
@@ -126,18 +127,28 @@ function Display-Paths {
     
     # If there are paths to display, list them with their indices.
     if ($paths.Count -gt 0) {
+        Write-Output "----------------------------------------------------------------------"
         Write-Output "$($paths.Count) $message"
+        $pathsTable = @()
         $i = 0
         $paths | ForEach-Object {
-            $emptyFolder = if ($_.Empty -eq $true) {"empty"} else {"content"}
-            Write-Output "   $i. $($_.Path) - $emptyFolder - ACL: $($_.ACL)"
+            $emptyFolder = if ($_.Empty -eq $true) {"empty"} else {"not empty"}
+            $pathsTable += [PSCustomObject]@{
+                Index = $i
+                Directory = $_.Path
+                Status = $emptyFolder
+                ACL = $_.ACL
+            }
             $i++
         }
+        
+        $pathsTable | Format-Table -AutoSize
     } else {
         Write-Output "No valid paths to select."
         exit
     }
 }
+
 
 # Function to prompt the user for path deletion.
 function Confirm-Deletion {
@@ -147,6 +158,7 @@ function Confirm-Deletion {
     )
     
     # Ask the user if they want to delete all selected paths.
+    Write-Output "----------------------------------------------------------------------"
     $deleteAll = Read-Host "Do you want to delete all selected paths? (yes/no)"
     if ($deleteAll -eq "yes") {
         # If yes, delete each path.
@@ -189,7 +201,7 @@ $validSubDirectoryPaths = $preValidationResult.Valid | ForEach-Object {
 }
 
 # Validate the subdirectories with empty directory and without active user.
-$validationResult = Validate-Paths -Paths $validSubDirectoryPaths
+$validationResult = Validate-Paths -Paths $validSubDirectoryPaths -emptyDirectories $emptyDirectories
 
 # Display the list of valid subdirectories along with their ACLs.
 Display-Paths -paths $validationResult -message "founded directories in ${parentPath}:"
