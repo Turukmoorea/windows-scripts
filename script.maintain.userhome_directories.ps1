@@ -62,7 +62,6 @@ function PreValidate-Paths {
     }
 }
 
-# Function to validate empty directories or directories without AD-user
 function Validate-Paths {
     param (
         [string[]]$Paths  # Array of subdirectory paths to validate.
@@ -70,14 +69,39 @@ function Validate-Paths {
     
     $results = @()
     
+    # Liste der zu ignorierenden SIDs
+    $ignoreSIDs = @(
+        "S-1-1-0",  # Everyone
+        "S-1-5-18", # NT AUTHORITY\SYSTEM
+        "S-1-5-32-544" # BUILTIN\Administrators
+    )
+    
+    # Function to check if SID can be resolved
+    function Is-SIDResolved {
+        param (
+            [string]$sid
+        )
+        try {
+            $sidObject = New-Object System.Security.Principal.SecurityIdentifier($sid)
+            $sidObject.Translate([System.Security.Principal.NTAccount])
+            return $true
+        } catch {
+            return $false
+        }
+    }
+    
     # For each subdirectory path, get the ACL and format the output.
     foreach ($path in $Paths) {
         # Check if the directory is empty
         $items = Get-ChildItem -Path $path -Force -ErrorAction SilentlyContinue
         $isEmpty = -not ($items | Where-Object { $_.PSIsContainer -or $_.Length -gt 0 })
         
+        # Get ACL and filter out ignored SIDs and check if SID is resolved
         $acl = Get-Acl -Path $path
-        $aclEntries = $acl.Access | ForEach-Object {
+        $aclEntries = $acl.Access | Where-Object {
+            $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            ($ignoreSIDs -notcontains $sid) -and (Is-SIDResolved -sid $sid)
+        } | ForEach-Object {
             "$($_.IdentityReference)"
         }
         $aclString = $aclEntries -join ", "
