@@ -204,7 +204,7 @@ $validSubDirectoryPaths = $preValidationResult.Valid | ForEach-Object {
 $validationResult = Validate-Paths -Paths $validSubDirectoryPaths -emptyDirectories $emptyDirectories
 
 # Display the list of valid subdirectories along with their ACLs.
-Display-Paths -paths $validationResult -message "founded directories in ${parentPath}:"
+Display-Paths -paths $validationResult -message "directories found in ${parentPath}:"
 
 # Prompt the user for deletion if the prompt flag is set.
 #if ($prompt) {

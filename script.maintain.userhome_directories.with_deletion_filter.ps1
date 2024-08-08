@@ -1,7 +1,8 @@
 param (
+    [string]$mode = "maintain",
     [string]$parentPath,  # The parent directory path to operate on. This parameter specifies the directory within which operations will be performed.
     [bool]$prompt = $true,  # A flag indicating whether to prompt the user for confirmation. If set to true, the script will prompt the user before performing certain actions.
-    [string]$emptyDirectories = "delete"  # A string parameter to specify how to handle empty directories.
+    [string]$emptyDirectories = "retain"  # A string parameter to specify how to handle empty directories.
 )
 
 # Function to resolve and validate the provided path.
@@ -97,21 +98,39 @@ function Validate-Paths {
         $items = Get-ChildItem -Path $path -Force -ErrorAction SilentlyContinue
         $isEmpty = -not ($items | Where-Object { $_.PSIsContainer -or $_.Length -gt 0 })
         
-        # Get ACL and filter out ignored SIDs and check if SID is resolved
+        # Get ACL and filter out ignored SIDs
         $acl = Get-Acl -Path $path
         $aclEntries = $acl.Access | Where-Object {
             $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
-            ($ignoreSIDs -notcontains $sid) -and (Is-SIDResolved -sid $sid)
+            $ignoreSIDs -notcontains $sid
         } | ForEach-Object {
             "$($_.IdentityReference)"
         }
         $aclString = $aclEntries -join ", "
+
+        # Check if there are unresolved SIDs
+        $unresolvedSIDs = $acl.Access | Where-Object {
+            $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            ($ignoreSIDs -notcontains $sid) -and -not (Is-SIDResolved -sid $sid)
+        }
         
-        # Create a custom object with the path, its empty status, and its ACL string.
-        $results += [PSCustomObject]@{
-            Path  = [System.IO.Path]::GetFileName($path)  # Only show the directory name.
-            Empty = $isEmpty
-            ACL   = $aclString
+        # Include directories based on specified conditions
+        if ($emptyDirectories -eq "delete") {
+            if ($isEmpty -or $unresolvedSIDs.Count -gt 0) {
+                $results += [PSCustomObject]@{
+                    Path  = [System.IO.Path]::GetFileName($path)  # Only show the directory name.
+                    Empty = $isEmpty
+                    ACL   = $aclString
+                }
+            }
+        } else {
+            if (($isEmpty -and $unresolvedSIDs.Count -gt 0) -or -not $isEmpty -and $unresolvedSIDs.Count -gt 0) {
+                $results += [PSCustomObject]@{
+                    Path  = [System.IO.Path]::GetFileName($path)  # Only show the directory name.
+                    Empty = $isEmpty
+                    ACL   = $aclString
+                }
+            }
         }
     }
     
@@ -204,7 +223,7 @@ $validSubDirectoryPaths = $preValidationResult.Valid | ForEach-Object {
 $validationResult = Validate-Paths -Paths $validSubDirectoryPaths -emptyDirectories $emptyDirectories
 
 # Display the list of valid subdirectories along with their ACLs.
-Display-Paths -paths $validationResult -message "founded directories in ${parentPath}:"
+Display-Paths -paths $validationResult -message "directories found in ${parentPath}:"
 
 # Prompt the user for deletion if the prompt flag is set.
 #if ($prompt) {
