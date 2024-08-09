@@ -29,7 +29,7 @@ param (
 $debugVarTable = @() # Initializes an empty, global debug table.
 
 #Helppage =========================================================================================
-# Function to display the help page.
+# Function to display the helppage.
 function Show-Helppage {
     Write-Output ""
     Write-Output "#Helppage =========================================================================================="
@@ -100,24 +100,22 @@ function Write-DebugInfo {
     )
     
     # Add rows to the table
-    $debugVarTable += [PSCustomObject]@{Code = ""; Row = ""; Function = "" }
+    $debugVarTable += [PSCustomObject]@{Name = $itemName; Value = $itemValue; Description = $description }
 }
 
 function Show-DebugInfo() {
-    if ($debug) {
-        Write-Host "#DEBUG-REPORT ======================================================================================"
-        Write-Host "all variables"
+    Write-Host "#DEBUG-REPORT ======================================================================================"
+    Write-Host "all variables"
 
-        # Display the table
-        $debugVarTable | Format-Table -AutoSize
-    }
+    # Display the table
+    $debugVarTable | Format-Table -AutoSize
 }
 
 Write-DebugInfo -itemName "debug" -itemValue $debug -description "Initial script parameter value"
 Write-DebugInfo -itemName "mode" -itemValue $mode -description "Initial script parameter value"
 Write-DebugInfo -itemName "parentPath" -itemValue $parentPath -description "Initial script parameter value"
 Write-DebugInfo -itemName "prompt" -itemValue $prompt -description "Initial script parameter value"
-Write-DebugInfo -itemName "emptyDirectories" $emptyDirectories -itemValue -description "Initial script parameter value"
+Write-DebugInfo -itemName "emptyDirectories" -itemValue $emptyDirectories -description "Initial script parameter value"
 
 #Resolve-AbsolutePath -----------------------------------------------------------------------------
 # Function to resolve and validate the provided path.
