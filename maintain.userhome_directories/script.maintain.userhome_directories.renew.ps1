@@ -72,7 +72,7 @@ if ($help -or $h -or $question) {
 
 #Ignore-List ======================================================================================
 
-function GET-IgnoreList {
+function Get-IgnoreList {
     $ignoreList = [PSCustomObject]@{
         SID = @(
             "S-1-1-0", # Everyone
@@ -121,21 +121,33 @@ Write-DebugInfo -itemName "emptyDirectories" -itemValue $emptyDirectories -descr
 # Function to resolve and validate the provided path.
 function Resolve-AbsolutePath {
     param ([string]$inputPath)
+    
+    Write-DebugInfo -itemName "Resolve-AbsolutePath:inputPath" -itemValue $inputPath -description "Initial function parameter value"
 
     # Check if the path is absolute. If not, resolve it to an absolute path.
     if (-not [System.IO.Path]::IsPathRooted($inputPath)) {
+        Write-DebugInfo -itemName "Resolve-AbsolutePath:inputPath" -itemValue $inputPath -description "The input path is an relative path."
         try {
             $resolvedPath = Resolve-Path -Path $inputPath -ErrorAction Stop
+            Write-DebugInfo -itemName "Resolve-AbsolutePath:resolvedPath" -itemValue $resolvedPath -description ""
+
             if ($null -ne $resolvedPath) {
                 $outputPath = $resolvedPath.ProviderPath
+                Write-DebugInfo -itemName "Resolve-AbsolutePath:outputPath" -itemValue $outputPath -description "The output path could be resolved."
             }
         }
         catch {
-            Write-Output "Error: Path does not exist."
+            Write-Output "Error: Absolute path cannot be resolved."
             exit
         }
     }
+    else {
+        $outputPath = $inputPath
+        Write-DebugInfo -itemName "Resolve-AbsolutePath" -itemValue $outputPath -description "The input path is an absolute path."
+    }
+
     return $outputPath  # Return the resolved input path.
+    Write-DebugInfo -itemName "Resolve-AbsolutePath:outputPath" -itemValue $outputPath -description "The function returned this value."
 }
 
 #Get-SubDirectories -------------------------------------------------------------------------------
@@ -166,6 +178,90 @@ function Invoke-SubDirectories {
             $invalidPaths += $childItems
         }
     }
+    
+    # Return a custom object containing both valid and invalid paths.
+    return [PSCustomObject]@{
+        Valid   = $validPaths
+        Invalid = $invalidPaths
+    }
+}
+
+#Convert-SID --------------------------------------------------------------------------------------
+function Resolve-SID {
+    param (
+        [string]$sid
+    )
+    try {
+        $sidObject = New-Object System.Security.Principal.SecurityIdentifier($sid)
+        $ntAccount = $sidObject.Translate([System.Security.Principal.NTAccount])
+        return [PSCustomObject]@{
+            Valid = $true
+            Value = $ntAccount
+        }
+    }
+    catch {
+        return [PSCustomObject]@{
+            Valid = $false
+            Value = $null
+            ErrorMessage = $_.Exception.Message
+        }
+    }
+}
+
+
+#Validate-Paths -----------------------------------------------------------------------------------
+function Select-ToProcessedPaths {
+    param (
+        [string[]]$Paths
+    )
+
+    $ignoreSIDs = Get-IgnoreList.SID
+    $results = @()
+    
+    foreach ($path in $Paths) {
+        # Check if the directory is empty.
+        $items = Get-ChildItem -Path $path -Force -ErrorAction SilentlyContinue
+        $isEmpty = -not ($items | Where-Object { $_.PSIsContainer -or $_.Length -gt 0 })
+        
+        # Get ACL and filter out ignored SIDs.
+        $acl = Get-Acl -Path $path
+        $aclEntries = $acl.Access | Where-Object {
+            $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            $ignoreSIDs -notcontains $sid
+        } | ForEach-Object {
+            "$($_.IdentityReference)"
+        }
+        $aclString = $aclEntries -join ", "
+
+        # Check if there are unresolved SIDs.
+        $unresolvedSIDs = $acl.Access | Where-Object {
+            $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            ($ignoreSIDs -notcontains $sid) -and -not (Is-SIDResolved -sid $sid)
+        }
+        
+        # Include directories based on specified conditions.
+        if ($emptyDirectories -eq "delete") {
+            if ($isEmpty -or $unresolvedSIDs.Count -gt 0) {
+                $results += [PSCustomObject]@{
+                    Path  = $path
+                    Name  = [System.IO.Path]::GetFileName($path)
+                    Empty = $isEmpty
+                    ACL   = $aclString
+                }
+            }
+        } else {
+            if (($isEmpty -and $unresolvedSIDs.Count -gt 0) -or -not $isEmpty -and $unresolvedSIDs.Count -gt 0) {
+                $results += [PSCustomObject]@{
+                    Path  = $path
+                    Name  = [System.IO.Path]::GetFileName($path)
+                    Empty = $isEmpty
+                    ACL   = $aclString
+                }
+            }
+        }
+    }
+    
+    return $results
 }
 
 #Mainscript =======================================================================================
