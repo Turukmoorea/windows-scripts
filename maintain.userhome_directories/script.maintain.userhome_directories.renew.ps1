@@ -55,7 +55,7 @@ function Show-AllExitCode {
     $table = @()
     
     # Add rows to the table
-    $table += [PSCustomObject]@{Code = ""; Row = ""; Function = "" }
+    $table += [PSCustomObject]@{Code = "100"; Row = "69"; Function = "Show-Helppage Trigger" }
     
     # Display the table
     $table | Format-Table -AutoSize
@@ -63,10 +63,10 @@ function Show-AllExitCode {
 }
 
 # Check for help parameters and display the help page if any are found.
-if ($help -or $h -or $question) {
+if ($help -or $h) {
     Show-Helppage
     Show-AllExitCode
-    exit
+    exit 100
 }
 
 
@@ -152,16 +152,16 @@ function Resolve-AbsolutePath {
 
 #Get-SubDirectories -------------------------------------------------------------------------------
 # Function to get the names of subdirectories within the specified base path.
-function Get-SubDirectories {
+function Get-SubItems {
     param ([string]$basePath)  # The base directory path.
     return Get-ChildItem -Path $basePath -Directory | Select-Object -ExpandProperty Name
 }
 
 #Invoke-SubDirectories ----------------------------------------------------------------------------
-function Invoke-SubDirectories {
+function Invoke-SubItems {
     param (
         [string]$basePath, # The base directory path.
-        [string[]]$childItems  # The subdirectory paths to validate.
+        [string[]]$subItems  # The subdirectory paths to validate.
     )
 
     # Arrays to hold valid and invalid paths.
@@ -169,13 +169,13 @@ function Invoke-SubDirectories {
     $invalidPaths = @()
     
     # Check each subdirectory path to see if it exists.
-    foreach ($childItem in $childItems) {
-        $fullPath = Join-Path -Path $basePath -ChildPath $childItems
+    foreach ($subItem in $subItems) {
+        $fullPath = Join-Path -Path $basePath -ChildPath $subItem
         if (Test-Path -Path $fullPath) {
-            $validPaths += $childItems
+            $validPaths += $fullPath
         }
         else {
-            $invalidPaths += $childItems
+            $invalidPaths += $fullPath
         }
     }
     
@@ -208,17 +208,15 @@ function Resolve-SID {
     }
 }
 
-
-#Validate-Paths -----------------------------------------------------------------------------------
+# Select-ToProcessedPaths -----------------------------------------------------------------------------------
 function Select-ToProcessedPaths {
     param (
-        [string[]]$Paths
+        [string[]]$paths
     )
 
-    $ignoreSIDs = Get-IgnoreList.SID
     $results = @()
     
-    foreach ($path in $Paths) {
+    foreach ($path in $paths) {
         # Check if the directory is empty.
         $items = Get-ChildItem -Path $path -Force -ErrorAction SilentlyContinue
         $isEmpty = -not ($items | Where-Object { $_.PSIsContainer -or $_.Length -gt 0 })
@@ -226,17 +224,25 @@ function Select-ToProcessedPaths {
         # Get ACL and filter out ignored SIDs.
         $acl = Get-Acl -Path $path
         $aclEntries = $acl.Access | Where-Object {
-            $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            $identityReference = $_.IdentityReference
+            $sid = $null
+            if ($identityReference -ne $null) {
+                $sid = $identityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            }
             $ignoreSIDs -notcontains $sid
         } | ForEach-Object {
             "$($_.IdentityReference)"
         }
+        
         $aclString = $aclEntries -join ", "
 
         # Check if there are unresolved SIDs.
         $unresolvedSIDs = $acl.Access | Where-Object {
-            $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
-            ($ignoreSIDs -notcontains $sid) -and -not (Is-SIDResolved -sid $sid)
+            $sid = $null
+            if ($_.IdentityReference -ne $null) {
+                $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            }
+            ($ignoreSIDs -notcontains $sid) -and -not (Resolve-SID -sid $sid)
         }
         
         # Include directories based on specified conditions.
@@ -264,24 +270,103 @@ function Select-ToProcessedPaths {
     return $results
 }
 
-#Mainscript =======================================================================================
-if ($debug) {
-    Show-DebugInfo
+# Function to display the list of paths with a message.
+function Show-ValidatedPaths {
+    param (
+        [PSCustomObject[]]$paths,  # List of paths with ACL to display.
+        [string]$message  # Message to display with the paths.
+    )
+    
+    # If there are paths to display, list them with their indices.
+    if ($paths.Count -gt 0) {
+        Write-Output "----------------------------------------------------------------------"
+        Write-Output "$($paths.Count) $message"
+        $pathsTable = @()
+        $i = 0
+        $paths | ForEach-Object {
+            $emptyFolder = if ($_.Empty -eq $true) {"empty"} else {"not empty"}
+            $pathsTable += [PSCustomObject]@{
+                Index = $i
+                Directory = $_.Name  # Only show the directory name.
+                Status = $emptyFolder
+                ACL = $_.ACL
+            }
+            $i++
+        }
+        
+        $pathsTable | Format-Table -AutoSize
+    } else {
+        Write-Output "No valid paths to select."
+        exit
+    }
 }
 
+# Function to prompt the user for path deletion.
+function Remove-Directories {
+    param (
+        [string]$basePath,  # The base directory path containing the paths to delete.
+        [PSCustomObject[]]$pathsToDelete  # List of paths to consider for deletion.
+    )
+    
+    # Ask the user if they want to delete all selected paths.
+    $deleteAll = Read-Host "Do you want to delete all selected paths? (yes/no)"
+    if ($deleteAll -eq "yes") {
+        # If yes, delete each path.
+        $pathsToDelete | ForEach-Object {
+            Remove-Item -Path $_.Path -Recurse -Force
+            Write-Output "Deleted path: $($_.Name)"
+        }
+    } else {
+        # Otherwise, prompt for specific paths to delete.
+        $selectedToDelete = Read-Host "Enter the indices of paths to delete, separated by commas (e.g., 0,1)"
+        $indices = $selectedToDelete -split "," | ForEach-Object { [int]$_.Trim() }
+        
+        # Delete the specified paths by index.
+        foreach ($index in $indices) {
+            if ($index -ge 0 -and $index -lt $pathsToDelete.Count) {
+                $pathToDelete = $pathsToDelete[$index]
+                Remove-Item -Path $pathToDelete.Path -Recurse -Force
+                Write-Output "Deleted path: $($pathToDelete.Name)"
+            } else {
+                Write-Output "Invalid index: $index"
+            }
+        }
+    }
+}
+
+#Mainscript =======================================================================================
+
+# Resolve the parent path to an absolute path.
+$parentPath = Resolve-AbsolutePath -inputPath $parentPath
+
+# Get the list of subdirectories within the parent path.
+$childItems = Get-SubItems -basePath $parentPath
+
+$validatedPaths = Invoke-SubItems -basePath $parentPath Get-SubItems $childItems
+
+$ignoreSIDs = (Get-IgnoreList).SID
 
 switch ($mode) {
     "maintain" {
+        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths
         
+        Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
+        
+        Remove-Directories -basePath $parentPath -pathsToDelete $selectedPaths
+
         break
     }
 
     "show" {
+        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths
+
+        Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
         
         break
     }
 
     "show all" {
+        Show-ValidatedPaths -paths $validatedPaths -message "Directories found in ${parentPath}:"
 
         break
     }
@@ -289,4 +374,8 @@ switch ($mode) {
     default {
         break
     }
+}
+
+if ($debug) {
+    Show-DebugInfo
 }
