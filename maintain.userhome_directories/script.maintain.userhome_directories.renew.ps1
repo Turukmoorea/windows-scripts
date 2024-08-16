@@ -185,7 +185,10 @@ function Resolve-SID {
 # Function to process a list of paths and select those to be further validated or deleted.
 function Select-ToProcessedPaths {
     param (
-        [string[]]$paths  # The list of paths to process.
+        [string[]]$paths,  # The list of paths to process.
+        [string]$mode,     # The mode of operation: "show" or "show all".
+        [string]$emptyDirectories, # Specifies how to handle empty directories: "retain" or "delete".
+        [string[]]$ignoreSIDs  # List of SIDs to ignore.
     )
 
     $results = @()
@@ -220,23 +223,34 @@ function Select-ToProcessedPaths {
             ($ignoreSIDs -notcontains $sid) -and -not (Resolve-SID -sid $sid)
         }
         
-        # Include directories based on specified conditions.
-        if ($emptyDirectories -eq "delete") {
-            if ($isEmpty -or $unresolvedSIDs.Count -gt 0) {
-                $results += [PSCustomObject]@{
-                    Path  = $path
-                    Name  = [System.IO.Path]::GetFileName($path)
-                    Empty = $isEmpty
-                    ACL   = $aclString
-                }
+        # Add directory to results based on the selected mode.
+        if ($mode -eq "show all") {
+            # In "show all" mode, include all directories.
+            $results += [PSCustomObject]@{
+                Path  = $path
+                Name  = [System.IO.Path]::GetFileName($path)
+                Empty = $isEmpty
+                ACL   = $aclString
             }
         } else {
-            if (($isEmpty -and $unresolvedSIDs.Count -gt 0) -or -not $isEmpty -and $unresolvedSIDs.Count -gt 0) {
-                $results += [PSCustomObject]@{
-                    Path  = $path
-                    Name  = [System.IO.Path]::GetFileName($path)
-                    Empty = $isEmpty
-                    ACL   = $aclString
+            # In "show" mode, include directories based on specified conditions.
+            if ($emptyDirectories -eq "delete") {
+                if ($isEmpty -or $unresolvedSIDs.Count -gt 0) {
+                    $results += [PSCustomObject]@{
+                        Path  = $path
+                        Name  = [System.IO.Path]::GetFileName($path)
+                        Empty = $isEmpty
+                        ACL   = $aclString
+                    }
+                }
+            } else {
+                if (($isEmpty -and $unresolvedSIDs.Count -gt 0) -or -not $isEmpty -and $unresolvedSIDs.Count -gt 0) {
+                    $results += [PSCustomObject]@{
+                        Path  = $path
+                        Name  = [System.IO.Path]::GetFileName($path)
+                        Empty = $isEmpty
+                        ACL   = $aclString
+                    }
                 }
             }
         }
@@ -244,6 +258,7 @@ function Select-ToProcessedPaths {
     
     return $results
 }
+
 
 # Function to display the list of paths with a message.
 function Show-ValidatedPaths {
@@ -328,7 +343,7 @@ $ignoreSIDs = (Get-IgnoreList).SID
 switch ($mode) {
     "maintain" {
         # In "maintain" mode, process and display the paths, then prompt for deletion.
-        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid
+        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid -mode $mode -emptyDirectories $emptyDirectories -ignoreSIDs $ignoreSIDs
 
         Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
         
@@ -339,7 +354,7 @@ switch ($mode) {
 
     "show" {
         # In "show" mode, just process and display the paths without deletion.
-        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid
+        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid -mode $mode -emptyDirectories $emptyDirectories -ignoreSIDs $ignoreSIDs
 
         Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
         
@@ -347,9 +362,11 @@ switch ($mode) {
     }
 
     "show all" {
-        # In "show all" mode, display all validated paths.
-        Show-ValidatedPaths -paths $validatedPaths.Valid -message "Directories found in ${parentPath}:"
+        # In "show all" mode, just process and display all the paths without deletion.
+        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid -mode $mode -emptyDirectories $emptyDirectories -ignoreSIDs $ignoreSIDs
 
+        Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
+        
         break
     }
 
@@ -358,3 +375,4 @@ switch ($mode) {
         break
     }
 }
+
