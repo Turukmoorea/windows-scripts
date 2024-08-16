@@ -81,6 +81,7 @@ function Get-IgnoreList {
         )
     }
 
+    Write-DebugInfo -itemName "ignoreList" -itemValue $ignoreList -description "List of SIDs to ignore"
     return $ignoreList
 }
 
@@ -95,9 +96,10 @@ function Write-DebugInfo {
         [string]$description   # A description of the item.
     )
     
-    # debug information ouput
+    # debug information output
     if ($debug) {
         Write-Output "DEBUG MODE -> Name = $itemName | Value = $itemValue | Description = $description"
+        $global:debugVarTable += ,([PSCustomObject]@{Name = $itemName; Value = $itemValue; Description = $description})
     }
 }
 
@@ -133,7 +135,7 @@ function Resolve-AbsolutePath {
         catch {
             # If resolving the path fails, output an error and exit.
             Write-Output "Error: Absolute path cannot be resolved."
-            exit
+            exit 101
         }
     }
     else {
@@ -151,8 +153,10 @@ function Get-SubItems {
     param ([string]$basePath)  # The base directory path.
     Write-DebugInfo -itemName "basePath" -itemValue $basePath -description "initial function parameter value."
     
-    # Get and return all subdirectories within the base path.
-    return Get-ChildItem -Path $basePath -Directory | Select-Object -ExpandProperty Name
+    # Get all items and filter only directories
+    $subItems = Get-ChildItem -Path $basePath | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty Name
+    Write-DebugInfo -itemName "subItems" -itemValue $subItems -description "Subdirectories found in base path"
+    return $subItems
 }
 
 #Invoke-SubDirectories ----------------------------------------------------------------------------
@@ -176,13 +180,16 @@ function Invoke-SubItems {
         else {
             $invalidPaths += $fullPath
         }
+        Write-DebugInfo -itemName "fullPath" -itemValue $fullPath -description "Processed subdirectory path"
     }
     
     # Return a custom object containing both valid and invalid paths.
-    return [PSCustomObject]@{
+    $result = [PSCustomObject]@{
         Valid   = $validPaths
         Invalid = $invalidPaths
     }
+    Write-DebugInfo -itemName "result" -itemValue $result -description "Result of Invoke-SubItems"
+    return $result
 }
 
 #Convert-SID --------------------------------------------------------------------------------------
@@ -195,18 +202,22 @@ function Resolve-SID {
         # Attempt to translate the SID into an NT account name.
         $sidObject = New-Object System.Security.Principal.SecurityIdentifier($sid)
         $ntAccount = $sidObject.Translate([System.Security.Principal.NTAccount])
-        return [PSCustomObject]@{
+        $result = [PSCustomObject]@{
             Valid = $true
             Value = $ntAccount
         }
+        Write-DebugInfo -itemName "SIDResult" -itemValue $result -description "Resolved SID to NT account name"
+        return $result
     }
     catch {
         # If translation fails, return the error message.
-        return [PSCustomObject]@{
+        $result = [PSCustomObject]@{
             Valid = $false
             Value = $null
             ErrorMessage = $_.Exception.Message
         }
+        Write-DebugInfo -itemName "SIDResult" -itemValue $result -description "Failed to resolve SID"
+        return $result
     }
 }
 
@@ -269,8 +280,11 @@ function Select-ToProcessedPaths {
                 }
             }
         }
+
+        Write-DebugInfo -itemName "ProcessedPath" -itemValue $path -description "Processed directory path for deletion or validation"
     }
     
+    Write-DebugInfo -itemName "Results" -itemValue $results -description "Paths selected for processing"
     return $results
 }
 
@@ -343,26 +357,27 @@ function Remove-Directories {
 
 # Resolve the parent path to an absolute path.
 $parentPath = Resolve-AbsolutePath -inputPath $parentPath
-Write-DebugInfo -itemName "parentPath" -itemValue $parentPath -description "returned value for function Resolve-AbsolutePath"
+Write-DebugInfo -itemName "parentPath" -itemValue $parentPath -description "Returned value for function Resolve-AbsolutePath"
 
 # Get the list of subdirectories within the parent path.
 $childItems = Get-SubItems -basePath $parentPath
-Write-DebugInfo -itemName "childItems" -itemValue $childItems -description "returned value for function Get-SubItems"
+Write-DebugInfo -itemName "childItems" -itemValue $childItems -description "Returned value for function Get-SubItems"
 
 # Validate subdirectory paths.
-$validatedPaths = Invoke-SubItems -basePath $parentPath Get-SubItems $childItems
-Write-DebugInfo -itemName "validatedPaths" -itemValue $validatedPaths -description "returned value for function Invoke-SubItems"
+$validatedPaths = Invoke-SubItems -basePath $parentPath -subItems $childItems
+Write-DebugInfo -itemName "validatedPaths" -itemValue $validatedPaths -description "Returned value for function Invoke-SubItems"
 
 # Get the list of SIDs to ignore.
 $ignoreSIDs = (Get-IgnoreList).SID
-Write-DebugInfo -itemName "ignoreSIDs" -itemValue $ignoreSIDs -description "returned value for function Get-IgnoreList (SID)"
+Write-DebugInfo -itemName "ignoreSIDs" -itemValue $ignoreSIDs -description "Returned value for function Get-IgnoreList (SID)"
 
 # Determine the script mode and take action accordingly.
 switch ($mode) {
     "maintain" {
         # In "maintain" mode, process and display the paths, then prompt for deletion.
-        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths
-        
+        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid
+        Write-DebugInfo -itemName "selectedPaths" -itemValue $selectedPaths -description "Paths selected for processing."
+
         Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
         
         Remove-Directories -basePath $parentPath -pathsToDelete $selectedPaths
@@ -372,7 +387,8 @@ switch ($mode) {
 
     "show" {
         # In "show" mode, just process and display the paths without deletion.
-        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths
+        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid
+        Write-DebugInfo -itemName "selectedPaths" -itemValue $selectedPaths -description "Paths selected for processing."
 
         Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
         
@@ -381,13 +397,13 @@ switch ($mode) {
 
     "show all" {
         # In "show all" mode, display all validated paths.
-        Show-ValidatedPaths -paths $validatedPaths -message "Directories found in ${parentPath}:"
+        Show-ValidatedPaths -paths $validatedPaths.Valid -message "Directories found in ${parentPath}:"
 
         break
     }
 
     default {
-        # Default case if an unknown mode is provided.
+        Write-Output "Invalid mode selected."
         break
     }
 }
