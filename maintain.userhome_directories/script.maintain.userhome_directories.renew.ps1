@@ -9,27 +9,27 @@
     Turukmoorea (github.com/turukmoorea)
 
 .DESCRIPTION
-This script iterates through all subdirectories of a specified parent directory, validates the paths and ACLs,
-and provides the option to delete empty directories or those with unresolved security IDs (SIDs).
-It offers an interactive interface that allows users to decide whether certain directories should be deleted.
+    This script iterates through all subdirectories of a specified parent directory, validates the paths and ACLs,
+    and provides the option to delete empty directories or those with unresolved security IDs (SIDs).
+    It offers an interactive interface that allows users to decide whether certain directories should be deleted.
 #>
 
 #param ============================================================================================
 param (
-    [switch]$help, # Switch to trigger the helppage.
-    [switch]$h, # Switch to trigger the helppage.
-    [switch]$debug, # Switch to trigger the debug mode.
+    [switch]$help,  # Switch to trigger the help page.
+    [switch]$h,     # Alternative switch to trigger the help page (alias).
+    [switch]$debug, # Switch to trigger the debug mode which logs detailed information.
 
-    [string]$mode = "maintain", # Mode of operation, with a default value of "maintain".
-    [string]$parentPath = $(Get-Location), # The parent directory path to operate on.
-    [bool]$prompt = $true, # Flag indicating whether to prompt the user for confirmation.
+    [string]$mode = "maintain",          # Mode of operation, with a default value of "maintain".
+    [string]$parentPath = $(Get-Location), # The parent directory path to operate on, defaulting to the current directory.
+    [bool]$prompt = $true,               # Flag indicating whether to prompt the user for confirmation.
     [string]$emptyDirectories = "retain"  # Specifies how to handle empty directories, defaulting to "retain".
 )
 
-$debugVarTable = @() # Initializes an empty, global debug table.
+$debugVarTable = @() # Initializes an empty array to store debug information.
 
 #Helppage =========================================================================================
-# Function to display the helppage.
+# Function to display the help page.
 function Show-Helppage {
     Write-Output ""
     Write-Output "#Helppage =========================================================================================="
@@ -37,7 +37,7 @@ function Show-Helppage {
     
     $table = @()
     
-    # Add rows to the table
+    # Define the parameters and descriptions to be displayed in the help page.
     $table += [PSCustomObject]@{Parameter = "-help, -h   "; Options = ""; Default = ""; Description = "Display this help page." }
     $table += [PSCustomObject]@{Parameter = "-debug   "; Options = ""; Default = ""; Description = "Display all variable (step-by-step)" }
     $table += [PSCustomObject]@{Parameter = "-mode <string>   "; Options = "maintain, show, show all   "; Default = "maintain"; Description = "Select the script mode." }
@@ -45,72 +45,63 @@ function Show-Helppage {
     $table += [PSCustomObject]@{Parameter = "-prompt <bool>   "; Options = "0, `$false, 1, `$true   "; Default = "true   "; Description = "Flag indicating whether to prompt the user for confirmation." }
     $table += [PSCustomObject]@{Parameter = "-emptyDirectories <string>   "; Options = "retain, delete   "; Default = "retain   "; Description = "Specifies how to handle empty directories." }
     
-    # Display the table
+    # Display the table in a formatted way.
     $table | Format-Table -AutoSize
 }
 
+# Function to display exit codes and their meanings.
 function Show-AllExitCode {
     Write-Output ""
     Write-Output "#All Exit-Codes ===================================================================================="
     $table = @()
     
-    # Add rows to the table
+    # Add rows to the exit code table.
     $table += [PSCustomObject]@{Code = "100"; Row = "69"; Function = "Show-Helppage Trigger" }
     
-    # Display the table
+    # Display the table in a formatted way.
     $table | Format-Table -AutoSize
     Write-Output ""
 }
 
-# Check for help parameters and display the help page if any are found.
+# Check if the help or alias parameters are provided, and if so, display the help page and exit.
 if ($help -or $h) {
     Show-Helppage
     Show-AllExitCode
     exit 100
 }
 
-
 #Ignore-List ======================================================================================
-
+# Function to get a list of security identifiers (SIDs) that should be ignored.
 function Get-IgnoreList {
     $ignoreList = [PSCustomObject]@{
         SID = @(
-            "S-1-1-0", # Everyone
-            "S-1-5-18", # NT AUTHORITY\SYSTEM
+            "S-1-1-0",   # Everyone
+            "S-1-5-18",  # NT AUTHORITY\SYSTEM
             "S-1-5-32-544" # BUILTIN\Administrators
         )
-
-        <#
-        Next Item = @()
-        #>
     }
 
     return $ignoreList
 }
 
-
 #Functions ========================================================================================
 
 #Debug-Function -----------------------------------------------------------------------------------
+# Function to log debug information into the global debug table.
 function Write-DebugInfo {
     param (
-        [string]$itemName,
-        $itemValue,
-        [string]$description
+        [string]$itemName,     # The name of the item to log.
+        $itemValue,            # The value of the item.
+        [string]$description   # A description of the item.
     )
     
-    # Add rows to the table
-    $debugVarTable += [PSCustomObject]@{Name = $itemName; Value = $itemValue; Description = $description }
+    # debug information ouput
+    if ($debug) {
+        Write-Output "DEBUG MODE -> Name = $itemName | Value = $itemValue | Description = $description"
+    }
 }
 
-function Show-DebugInfo() {
-    Write-Host "#DEBUG-REPORT ======================================================================================"
-    Write-Host "all variables"
-
-    # Display the table
-    $debugVarTable | Format-Table -AutoSize
-}
-
+# Log initial script parameter values for debugging.
 Write-DebugInfo -itemName "debug" -itemValue $debug -description "Initial script parameter value"
 Write-DebugInfo -itemName "mode" -itemValue $mode -description "Initial script parameter value"
 Write-DebugInfo -itemName "parentPath" -itemValue $parentPath -description "Initial script parameter value"
@@ -122,53 +113,61 @@ Write-DebugInfo -itemName "emptyDirectories" -itemValue $emptyDirectories -descr
 function Resolve-AbsolutePath {
     param ([string]$inputPath)
     
+    # Log the input path for debugging.
     Write-DebugInfo -itemName "Resolve-AbsolutePath:inputPath" -itemValue $inputPath -description "Initial function parameter value"
 
     # Check if the path is absolute. If not, resolve it to an absolute path.
     if (-not [System.IO.Path]::IsPathRooted($inputPath)) {
-        Write-DebugInfo -itemName "Resolve-AbsolutePath:inputPath" -itemValue $inputPath -description "The input path is an relative path."
+        Write-DebugInfo -itemName "Resolve-AbsolutePath:inputPath" -itemValue $inputPath -description "The input path is a relative path."
         try {
+            # Attempt to resolve the path to an absolute path.
             $resolvedPath = Resolve-Path -Path $inputPath -ErrorAction Stop
             Write-DebugInfo -itemName "Resolve-AbsolutePath:resolvedPath" -itemValue $resolvedPath -description ""
 
+            # If the path was successfully resolved, log and return it.
             if ($null -ne $resolvedPath) {
                 $outputPath = $resolvedPath.ProviderPath
-                Write-DebugInfo -itemName "Resolve-AbsolutePath:outputPath" -itemValue $outputPath -description "The output path could be resolved."
+                Write-DebugInfo -itemName "Resolve-AbsolutePath:outputPath" -itemValue $outputPath -description "The output path was successfully resolved."
             }
         }
         catch {
+            # If resolving the path fails, output an error and exit.
             Write-Output "Error: Absolute path cannot be resolved."
             exit
         }
     }
     else {
+        # If the input path is already absolute, just log and return it.
         $outputPath = $inputPath
-        Write-DebugInfo -itemName "Resolve-AbsolutePath" -itemValue $outputPath -description "The input path is an absolute path."
+        Write-DebugInfo -itemName "Resolve-AbsolutePath" -itemValue $outputPath -description "The input path is already an absolute path."
     }
 
-    return $outputPath  # Return the resolved input path.
-    Write-DebugInfo -itemName "Resolve-AbsolutePath:outputPath" -itemValue $outputPath -description "The function returned this value."
+    return $outputPath  # Return the resolved absolute path.
 }
 
 #Get-SubDirectories -------------------------------------------------------------------------------
 # Function to get the names of subdirectories within the specified base path.
 function Get-SubItems {
     param ([string]$basePath)  # The base directory path.
+    Write-DebugInfo -itemName "basePath" -itemValue $basePath -description "initial function parameter value."
+    
+    # Get and return all subdirectories within the base path.
     return Get-ChildItem -Path $basePath -Directory | Select-Object -ExpandProperty Name
 }
 
 #Invoke-SubDirectories ----------------------------------------------------------------------------
+# Function to validate subdirectory paths within the base path.
 function Invoke-SubItems {
     param (
-        [string]$basePath, # The base directory path.
-        [string[]]$subItems  # The subdirectory paths to validate.
+        [string]$basePath,  # The base directory path.
+        [string[]]$subItems # The subdirectory paths to validate.
     )
 
     # Arrays to hold valid and invalid paths.
     $validPaths = @()
     $invalidPaths = @()
     
-    # Check each subdirectory path to see if it exists.
+    # Iterate through each subdirectory and check if it exists.
     foreach ($subItem in $subItems) {
         $fullPath = Join-Path -Path $basePath -ChildPath $subItem
         if (Test-Path -Path $fullPath) {
@@ -187,11 +186,13 @@ function Invoke-SubItems {
 }
 
 #Convert-SID --------------------------------------------------------------------------------------
+# Function to resolve a SID to a human-readable account name.
 function Resolve-SID {
     param (
-        [string]$sid
+        [string]$sid  # The SID to resolve.
     )
     try {
+        # Attempt to translate the SID into an NT account name.
         $sidObject = New-Object System.Security.Principal.SecurityIdentifier($sid)
         $ntAccount = $sidObject.Translate([System.Security.Principal.NTAccount])
         return [PSCustomObject]@{
@@ -200,6 +201,7 @@ function Resolve-SID {
         }
     }
     catch {
+        # If translation fails, return the error message.
         return [PSCustomObject]@{
             Valid = $false
             Value = $null
@@ -209,9 +211,10 @@ function Resolve-SID {
 }
 
 # Select-ToProcessedPaths -----------------------------------------------------------------------------------
+# Function to process a list of paths and select those to be further validated or deleted.
 function Select-ToProcessedPaths {
     param (
-        [string[]]$paths
+        [string[]]$paths  # The list of paths to process.
     )
 
     $results = @()
@@ -221,7 +224,7 @@ function Select-ToProcessedPaths {
         $items = Get-ChildItem -Path $path -Force -ErrorAction SilentlyContinue
         $isEmpty = -not ($items | Where-Object { $_.PSIsContainer -or $_.Length -gt 0 })
         
-        # Get ACL and filter out ignored SIDs.
+        # Get the Access Control List (ACL) and filter out ignored SIDs.
         $acl = Get-Acl -Path $path
         $aclEntries = $acl.Access | Where-Object {
             $identityReference = $_.IdentityReference
@@ -234,6 +237,7 @@ function Select-ToProcessedPaths {
             "$($_.IdentityReference)"
         }
         
+        # Convert ACL entries to a comma-separated string.
         $aclString = $aclEntries -join ", "
 
         # Check if there are unresolved SIDs.
@@ -335,19 +339,28 @@ function Remove-Directories {
 }
 
 #Mainscript =======================================================================================
+# Main script logic starts here.
 
 # Resolve the parent path to an absolute path.
 $parentPath = Resolve-AbsolutePath -inputPath $parentPath
+Write-DebugInfo -itemName "parentPath" -itemValue $parentPath -description "returned value for function Resolve-AbsolutePath"
 
 # Get the list of subdirectories within the parent path.
 $childItems = Get-SubItems -basePath $parentPath
+Write-DebugInfo -itemName "childItems" -itemValue $childItems -description "returned value for function Get-SubItems"
 
+# Validate subdirectory paths.
 $validatedPaths = Invoke-SubItems -basePath $parentPath Get-SubItems $childItems
+Write-DebugInfo -itemName "validatedPaths" -itemValue $validatedPaths -description "returned value for function Invoke-SubItems"
 
+# Get the list of SIDs to ignore.
 $ignoreSIDs = (Get-IgnoreList).SID
+Write-DebugInfo -itemName "ignoreSIDs" -itemValue $ignoreSIDs -description "returned value for function Get-IgnoreList (SID)"
 
+# Determine the script mode and take action accordingly.
 switch ($mode) {
     "maintain" {
+        # In "maintain" mode, process and display the paths, then prompt for deletion.
         $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths
         
         Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
@@ -358,6 +371,7 @@ switch ($mode) {
     }
 
     "show" {
+        # In "show" mode, just process and display the paths without deletion.
         $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths
 
         Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
@@ -366,16 +380,14 @@ switch ($mode) {
     }
 
     "show all" {
+        # In "show all" mode, display all validated paths.
         Show-ValidatedPaths -paths $validatedPaths -message "Directories found in ${parentPath}:"
 
         break
     }
 
     default {
+        # Default case if an unknown mode is provided.
         break
     }
-}
-
-if ($debug) {
-    Show-DebugInfo
 }
