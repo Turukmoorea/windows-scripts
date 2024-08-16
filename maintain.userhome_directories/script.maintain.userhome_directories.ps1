@@ -1,163 +1,256 @@
+<#header ==========================================================================================
+.SCRIPTNAME
+    script.maintain.userhome_directories.ps1
+
+.VERSION
+    1.0
+
+.AUTHOR
+    Turukmoorea (github.com/turukmoorea)
+
+.DESCRIPTION
+    This script iterates through all subdirectories of a specified parent directory, validates the paths and ACLs,
+    and provides the option to delete empty directories or those with unresolved security IDs (SIDs).
+    It offers an interactive interface that allows users to decide whether certain directories should be deleted.
+#>
+
+#param ============================================================================================
 param (
-    [string]$mode = "maintain",  # Mode of operation, with a default value of "maintain".
-    [string]$parentPath,  # The parent directory path to operate on.
-    [bool]$prompt = $true,  # Flag indicating whether to prompt the user for confirmation.
-    [string]$emptyDirectories = "retain",  # Specifies how to handle empty directories, defaulting to "retain".
-    [switch]$help,  # Switch to trigger the helppage.
-    [switch]$h  # Switch to trigger the helppage.
+    [switch]$help,  # Switch to trigger the help page.
+    [switch]$h,     # Alternative switch to trigger the help page (alias).
+
+    [string]$mode = "maintain",          # Mode of operation, with a default value of "maintain".
+    [string]$parentPath = $(Get-Location), # The parent directory path to operate on, defaulting to the current directory.
+    [bool]$prompt = $true,               # Flag indicating whether to prompt the user for confirmation.
+    [string]$emptyDirectories = "retain"  # Specifies how to handle empty directories, defaulting to "retain".
 )
 
+#Helppage =========================================================================================
 # Function to display the help page.
-function Display-Help {
-    Write-Output "Usage: <scriptname> [parameters]"
+function Show-Helppage {
     Write-Output ""
+    Write-Output "#Helppage =========================================================================================="
+    Write-Output "Usage: <scriptname> [parameters]"
     
     $table = @()
     
-    # Add rows to the table
-    $table += [PSCustomObject]@{Parameter="-help, -h   "; Options=""; Description="Display this help page."}
-    $table += [PSCustomObject]@{Parameter="-parentPath <string>   "; Options=""; Description="The absolute or relative parent directory path to access. Default is current Directory."}
-    $table += [PSCustomObject]@{Parameter="-prompt <bool>   "; Options="0, `$false, 1, `$true   "; Description="Flag indicating whether to prompt the user for confirmation. Default is true."}
-    $table += [PSCustomObject]@{Parameter="-emptyDirectories <string>   "; Options="retain, delete   "; Description="Specifies how to handle empty directories. Default is 'retain'."}
+    # Define the parameters and descriptions to be displayed in the help page.
+    $table += [PSCustomObject]@{Parameter = "-help, -h   "; Options = ""; Default = ""; Description = "Display this help page." }
+    $table += [PSCustomObject]@{Parameter = "-mode <string>   "; Options = "maintain, show, show all   "; Default = "maintain"; Description = "Select the script mode." }
+    $table += [PSCustomObject]@{Parameter = "-parentPath <string>   "; Options = ""; Default = "current path   "; Description = "The absolute or relative parent directory path to access." }
+    $table += [PSCustomObject]@{Parameter = "-prompt <bool>   "; Options = "0, `$false, 1, `$true   "; Default = "true   "; Description = "Flag indicating whether to prompt the user for confirmation." }
+    $table += [PSCustomObject]@{Parameter = "-emptyDirectories <string>   "; Options = "retain, delete   "; Default = "retain   "; Description = "Specifies how to handle empty directories." }
     
-    # Display the table
+    # Display the table in a formatted way.
     $table | Format-Table -AutoSize
+}
+
+# Function to display exit codes and their meanings.
+function Show-AllExitCode {
+    Write-Output ""
+    Write-Output "#All Exit-Codes ===================================================================================="
+    $table = @()
     
-    exit
+    # Add rows to the exit code table.
+    $table += [PSCustomObject]@{Code = "100"; Row = "69"; Function = "Show-Helppage Trigger" }
+    $table += [PSCustomObject]@{Code = "101"; Row = "104"; Function = "Resolve-AbsolutePath" }
+    $table += [PSCustomObject]@{Code = "102"; Row = "275"; Function = "Show-ValidatedPaths" }
+    
+    # Display the table in a formatted way.
+    $table | Format-Table -AutoSize
+    Write-Output ""
 }
 
-# Check for help parameters and display the help page if any are found.
-if ($help -or $h -or $question) {
-    Display-Help
+# Check if the help or alias parameters are provided, and if so, display the help page and exit.
+if ($help -or $h) {
+    Show-Helppage
+    Show-AllExitCode
+    exit 100
 }
 
+#Ignore-List ======================================================================================
+# Function to get a list of security identifiers (SIDs) that should be ignored.
+function Get-IgnoreList {
+    $ignoreList = [PSCustomObject]@{
+        SID = @(
+            "S-1-1-0",   # Everyone
+            "S-1-5-18",  # NT AUTHORITY\SYSTEM
+            "S-1-5-32-544" # BUILTIN\Administrators
+        )
+    }
+    return $ignoreList
+}
+
+#Functions ========================================================================================
+
+#Resolve-AbsolutePath -----------------------------------------------------------------------------
 # Function to resolve and validate the provided path.
 function Resolve-AbsolutePath {
-    param ([string]$inputPath)  # The input path to resolve.
-    
-    # If the input path is null or empty, use the current directory.
-    if ($null -eq $inputPath -or $inputPath.Trim() -eq "") {
-        $inputPath = Get-Location
-    }
-    
+    param ([string]$inputPath)
+
     # Check if the path is absolute. If not, resolve it to an absolute path.
     if (-not [System.IO.Path]::IsPathRooted($inputPath)) {
         try {
+            # Attempt to resolve the path to an absolute path.
             $resolvedPath = Resolve-Path -Path $inputPath -ErrorAction Stop
+
+            # If the path was successfully resolved, log and return it.
             if ($null -ne $resolvedPath) {
-                $inputPath = $resolvedPath.ProviderPath
+                $outputPath = $resolvedPath.ProviderPath
             }
-        } catch {
-            Write-Output "Error: Path does not exist."
-            exit
+        }
+        catch {
+            # If resolving the path fails, output an error and exit.
+            Write-Output "Error: Absolute path cannot be resolved."
+            exit 101
         }
     }
-    return $inputPath  # Return the resolved input path.
+    else {
+        # If the input path is already absolute, just return it.
+        $outputPath = $inputPath
+    }
+
+    return $outputPath  # Return the resolved absolute path.
 }
 
+#Get-SubDirectories -------------------------------------------------------------------------------
 # Function to get the names of subdirectories within the specified base path.
-function Get-SubDirectories {
+function Get-SubItems {
     param ([string]$basePath)  # The base directory path.
-    return Get-ChildItem -Path $basePath -Directory | Select-Object -ExpandProperty Name
+    
+    # Get all items and filter only directories
+    $subItems = Get-ChildItem -Path $basePath | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty Name
+    return $subItems
 }
 
-# Function to validate the existence of the subdirectories.
-function PreValidate-Paths {
+#Invoke-SubDirectories ----------------------------------------------------------------------------
+# Function to validate subdirectory paths within the base path.
+function Invoke-SubItems {
     param (
         [string]$basePath,  # The base directory path.
-        [string[]]$subPaths  # The subdirectory paths to validate.
+        [string[]]$subItems # The subdirectory paths to validate.
     )
-    
+
     # Arrays to hold valid and invalid paths.
     $validPaths = @()
     $invalidPaths = @()
     
-    # Check each subdirectory path to see if it exists.
-    foreach ($subPath in $subPaths) {
-        $fullPath = Join-Path -Path $basePath -ChildPath $subPath
+    # Iterate through each subdirectory and check if it exists.
+    foreach ($subItem in $subItems) {
+        $fullPath = Join-Path -Path $basePath -ChildPath $subItem
         if (Test-Path -Path $fullPath) {
-            $validPaths += $subPath
-        } else {
-            $invalidPaths += $subPath
+            $validPaths += $fullPath
+        }
+        else {
+            $invalidPaths += $fullPath
         }
     }
     
     # Return a custom object containing both valid and invalid paths.
-    return [PSCustomObject]@{
-        Valid = $validPaths
+    $result = [PSCustomObject]@{
+        Valid   = $validPaths
         Invalid = $invalidPaths
+    }
+    return $result
+}
+
+#Convert-SID --------------------------------------------------------------------------------------
+# Function to resolve a SID to a human-readable account name.
+function Resolve-SID {
+    param (
+        [string]$sid  # The SID to resolve.
+    )
+    try {
+        # Attempt to translate the SID into an NT account name.
+        $sidObject = New-Object System.Security.Principal.SecurityIdentifier($sid)
+        $ntAccount = $sidObject.Translate([System.Security.Principal.NTAccount])
+        $result = [PSCustomObject]@{
+            Valid = $true
+            Value = $ntAccount
+        }
+        return $result
+    }
+    catch {
+        # If translation fails, return the error message.
+        $result = [PSCustomObject]@{
+            Valid = $false
+            Value = $null
+            ErrorMessage = $_.Exception.Message
+        }
+        return $result
     }
 }
 
-# Function to validate paths based on specified conditions.
-function Validate-Paths {
+# Select-ToProcessedPaths -----------------------------------------------------------------------------------
+# Function to process a list of paths and select those to be further validated or deleted.
+function Select-ToProcessedPaths {
     param (
-        [string]$emptyDirectories,  # Specifies how to handle empty directories.
-        [string[]]$Paths  # Array of subdirectory paths to validate.
+        [string[]]$paths,  # The list of paths to process.
+        [string]$mode,     # The mode of operation: "show" or "show all".
+        [string]$emptyDirectories, # Specifies how to handle empty directories: "retain" or "delete".
+        [string[]]$ignoreSIDs  # List of SIDs to ignore.
     )
-    
+
     $results = @()
     
-    # List of SIDs to ignore.
-    $ignoreSIDs = @(
-        "S-1-1-0",  # Everyone
-        "S-1-5-18", # NT AUTHORITY\SYSTEM
-        "S-1-5-32-544" # BUILTIN\Administrators
-    )
-    
-    # Function to check if SID can be resolved.
-    function Is-SIDResolved {
-        param (
-            [string]$sid
-        )
-        try {
-            $sidObject = New-Object System.Security.Principal.SecurityIdentifier($sid)
-            $sidObject.Translate([System.Security.Principal.NTAccount])
-            return $true
-        } catch {
-            return $false
-        }
-    }
-    
-    # For each subdirectory path, get the ACL and format the output.
-    foreach ($path in $Paths) {
+    foreach ($path in $paths) {
         # Check if the directory is empty.
         $items = Get-ChildItem -Path $path -Force -ErrorAction SilentlyContinue
         $isEmpty = -not ($items | Where-Object { $_.PSIsContainer -or $_.Length -gt 0 })
         
-        # Get ACL and filter out ignored SIDs.
+        # Get the Access Control List (ACL) and filter out ignored SIDs.
         $acl = Get-Acl -Path $path
         $aclEntries = $acl.Access | Where-Object {
-            $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            $identityReference = $_.IdentityReference
+            $sid = $null
+            if ($identityReference -ne $null) {
+                $sid = $identityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            }
             $ignoreSIDs -notcontains $sid
         } | ForEach-Object {
             "$($_.IdentityReference)"
         }
+        
+        # Convert ACL entries to a comma-separated string.
         $aclString = $aclEntries -join ", "
 
         # Check if there are unresolved SIDs.
         $unresolvedSIDs = $acl.Access | Where-Object {
-            $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
-            ($ignoreSIDs -notcontains $sid) -and -not (Is-SIDResolved -sid $sid)
+            $sid = $null
+            if ($_.IdentityReference -ne $null) {
+                $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            }
+            ($ignoreSIDs -notcontains $sid) -and -not (Resolve-SID -sid $sid)
         }
         
-        # Include directories based on specified conditions.
-        if ($emptyDirectories -eq "delete") {
-            if ($isEmpty -or $unresolvedSIDs.Count -gt 0) {
-                $results += [PSCustomObject]@{
-                    Path  = $path
-                    Name  = [System.IO.Path]::GetFileName($path)
-                    Empty = $isEmpty
-                    ACL   = $aclString
-                }
+        # Add directory to results based on the selected mode.
+        if ($mode -eq "show all") {
+            # In "show all" mode, include all directories.
+            $results += [PSCustomObject]@{
+                Path  = $path
+                Name  = [System.IO.Path]::GetFileName($path)
+                Empty = $isEmpty
+                ACL   = $aclString
             }
         } else {
-            if (($isEmpty -and $unresolvedSIDs.Count -gt 0) -or -not $isEmpty -and $unresolvedSIDs.Count -gt 0) {
-                $results += [PSCustomObject]@{
-                    Path  = $path
-                    Name  = [System.IO.Path]::GetFileName($path)
-                    Empty = $isEmpty
-                    ACL   = $aclString
+            # In "show" mode, include directories based on specified conditions.
+            if ($emptyDirectories -eq "delete") {
+                if ($isEmpty -or $unresolvedSIDs.Count -gt 0) {
+                    $results += [PSCustomObject]@{
+                        Path  = $path
+                        Name  = [System.IO.Path]::GetFileName($path)
+                        Empty = $isEmpty
+                        ACL   = $aclString
+                    }
+                }
+            } else {
+                if (($isEmpty -and $unresolvedSIDs.Count -gt 0) -or -not $isEmpty -and $unresolvedSIDs.Count -gt 0) {
+                    $results += [PSCustomObject]@{
+                        Path  = $path
+                        Name  = [System.IO.Path]::GetFileName($path)
+                        Empty = $isEmpty
+                        ACL   = $aclString
+                    }
                 }
             }
         }
@@ -166,8 +259,9 @@ function Validate-Paths {
     return $results
 }
 
+
 # Function to display the list of paths with a message.
-function Display-Paths {
+function Show-ValidatedPaths {
     param (
         [PSCustomObject[]]$paths,  # List of paths with ACL to display.
         [string]$message  # Message to display with the paths.
@@ -193,12 +287,12 @@ function Display-Paths {
         $pathsTable | Format-Table -AutoSize
     } else {
         Write-Output "No valid paths to select."
-        exit
+        exit 102
     }
 }
 
 # Function to prompt the user for path deletion.
-function Confirm-Deletion {
+function Remove-Directories {
     param (
         [string]$basePath,  # The base directory path containing the paths to delete.
         [PSCustomObject[]]$pathsToDelete  # List of paths to consider for deletion.
@@ -230,29 +324,55 @@ function Confirm-Deletion {
     }
 }
 
-# Main script execution starts here.
+#Mainscript =======================================================================================
+# Main script logic starts here.
 
 # Resolve the parent path to an absolute path.
 $parentPath = Resolve-AbsolutePath -inputPath $parentPath
 
 # Get the list of subdirectories within the parent path.
-$childDirectories = Get-SubDirectories -basePath $parentPath
+$childItems = Get-SubItems -basePath $parentPath
 
-# Validate the subdirectories and separate valid from invalid ones.
-$preValidationResult = PreValidate-Paths -basePath $parentPath -subPaths $childDirectories
+# Validate subdirectory paths.
+$validatedPaths = Invoke-SubItems -basePath $parentPath -subItems $childItems
 
-# Get the list of valid subdirectory paths for further validation.
-$validSubDirectoryPaths = $preValidationResult.Valid | ForEach-Object {
-    Join-Path -Path $parentPath -ChildPath $_
+# Get the list of SIDs to ignore.
+$ignoreSIDs = (Get-IgnoreList).SID
+
+# Determine the script mode and take action accordingly.
+switch ($mode) {
+    "maintain" {
+        # In "maintain" mode, process and display the paths, then prompt for deletion.
+        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid -mode $mode -emptyDirectories $emptyDirectories -ignoreSIDs $ignoreSIDs
+
+        Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
+        
+        Remove-Directories -basePath $parentPath -pathsToDelete $selectedPaths
+
+        break
+    }
+
+    "show" {
+        # In "show" mode, just process and display the paths without deletion.
+        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid -mode $mode -emptyDirectories $emptyDirectories -ignoreSIDs $ignoreSIDs
+
+        Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
+        
+        break
+    }
+
+    "show all" {
+        # In "show all" mode, just process and display all the paths without deletion.
+        $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid -mode $mode -emptyDirectories $emptyDirectories -ignoreSIDs $ignoreSIDs
+
+        Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
+        
+        break
+    }
+
+    default {
+        Write-Output "Invalid mode selected."
+        break
+    }
 }
 
-# Validate the subdirectories with empty directory and without active user.
-$validationResult = Validate-Paths -Paths $validSubDirectoryPaths -emptyDirectories $emptyDirectories
-
-# Display the list of valid subdirectories along with their ACLs.
-Display-Paths -paths $validationResult -message "directories found in ${parentPath}:"
-
-# Prompt the user for deletion if the prompt flag is set.
-#if ($prompt) {
-#    Confirm-Deletion -basePath $parentPath -pathsToDelete $validationResult
-#}
