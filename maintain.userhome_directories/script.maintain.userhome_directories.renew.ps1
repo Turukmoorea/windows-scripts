@@ -18,15 +18,12 @@
 param (
     [switch]$help,  # Switch to trigger the help page.
     [switch]$h,     # Alternative switch to trigger the help page (alias).
-    [switch]$debug, # Switch to trigger the debug mode which logs detailed information.
 
     [string]$mode = "maintain",          # Mode of operation, with a default value of "maintain".
     [string]$parentPath = $(Get-Location), # The parent directory path to operate on, defaulting to the current directory.
     [bool]$prompt = $true,               # Flag indicating whether to prompt the user for confirmation.
     [string]$emptyDirectories = "retain"  # Specifies how to handle empty directories, defaulting to "retain".
 )
-
-$debugVarTable = @() # Initializes an empty array to store debug information.
 
 #Helppage =========================================================================================
 # Function to display the help page.
@@ -39,7 +36,6 @@ function Show-Helppage {
     
     # Define the parameters and descriptions to be displayed in the help page.
     $table += [PSCustomObject]@{Parameter = "-help, -h   "; Options = ""; Default = ""; Description = "Display this help page." }
-    $table += [PSCustomObject]@{Parameter = "-debug   "; Options = ""; Default = ""; Description = "Display all variable (step-by-step)" }
     $table += [PSCustomObject]@{Parameter = "-mode <string>   "; Options = "maintain, show, show all   "; Default = "maintain"; Description = "Select the script mode." }
     $table += [PSCustomObject]@{Parameter = "-parentPath <string>   "; Options = ""; Default = "current path   "; Description = "The absolute or relative parent directory path to access." }
     $table += [PSCustomObject]@{Parameter = "-prompt <bool>   "; Options = "0, `$false, 1, `$true   "; Default = "true   "; Description = "Flag indicating whether to prompt the user for confirmation." }
@@ -80,56 +76,25 @@ function Get-IgnoreList {
             "S-1-5-32-544" # BUILTIN\Administrators
         )
     }
-
-    Write-DebugInfo -itemName "ignoreList" -itemValue $ignoreList -description "List of SIDs to ignore"
     return $ignoreList
 }
 
 #Functions ========================================================================================
 
-#Debug-Function -----------------------------------------------------------------------------------
-# Function to log debug information into the global debug table.
-function Write-DebugInfo {
-    param (
-        [string]$itemName,     # The name of the item to log.
-        $itemValue,            # The value of the item.
-        [string]$description   # A description of the item.
-    )
-    
-    # debug information output
-    if ($debug) {
-        Write-Output "DEBUG MODE -> Name = $itemName | Value = $itemValue | Description = $description"
-        $global:debugVarTable += ,([PSCustomObject]@{Name = $itemName; Value = $itemValue; Description = $description})
-    }
-}
-
-# Log initial script parameter values for debugging.
-Write-DebugInfo -itemName "debug" -itemValue $debug -description "Initial script parameter value"
-Write-DebugInfo -itemName "mode" -itemValue $mode -description "Initial script parameter value"
-Write-DebugInfo -itemName "parentPath" -itemValue $parentPath -description "Initial script parameter value"
-Write-DebugInfo -itemName "prompt" -itemValue $prompt -description "Initial script parameter value"
-Write-DebugInfo -itemName "emptyDirectories" -itemValue $emptyDirectories -description "Initial script parameter value"
-
 #Resolve-AbsolutePath -----------------------------------------------------------------------------
 # Function to resolve and validate the provided path.
 function Resolve-AbsolutePath {
     param ([string]$inputPath)
-    
-    # Log the input path for debugging.
-    Write-DebugInfo -itemName "Resolve-AbsolutePath:inputPath" -itemValue $inputPath -description "Initial function parameter value"
 
     # Check if the path is absolute. If not, resolve it to an absolute path.
     if (-not [System.IO.Path]::IsPathRooted($inputPath)) {
-        Write-DebugInfo -itemName "Resolve-AbsolutePath:inputPath" -itemValue $inputPath -description "The input path is a relative path."
         try {
             # Attempt to resolve the path to an absolute path.
             $resolvedPath = Resolve-Path -Path $inputPath -ErrorAction Stop
-            Write-DebugInfo -itemName "Resolve-AbsolutePath:resolvedPath" -itemValue $resolvedPath -description ""
 
             # If the path was successfully resolved, log and return it.
             if ($null -ne $resolvedPath) {
                 $outputPath = $resolvedPath.ProviderPath
-                Write-DebugInfo -itemName "Resolve-AbsolutePath:outputPath" -itemValue $outputPath -description "The output path was successfully resolved."
             }
         }
         catch {
@@ -139,9 +104,8 @@ function Resolve-AbsolutePath {
         }
     }
     else {
-        # If the input path is already absolute, just log and return it.
+        # If the input path is already absolute, just return it.
         $outputPath = $inputPath
-        Write-DebugInfo -itemName "Resolve-AbsolutePath" -itemValue $outputPath -description "The input path is already an absolute path."
     }
 
     return $outputPath  # Return the resolved absolute path.
@@ -151,11 +115,9 @@ function Resolve-AbsolutePath {
 # Function to get the names of subdirectories within the specified base path.
 function Get-SubItems {
     param ([string]$basePath)  # The base directory path.
-    Write-DebugInfo -itemName "basePath" -itemValue $basePath -description "initial function parameter value."
     
     # Get all items and filter only directories
     $subItems = Get-ChildItem -Path $basePath | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty Name
-    Write-DebugInfo -itemName "subItems" -itemValue $subItems -description "Subdirectories found in base path"
     return $subItems
 }
 
@@ -180,7 +142,6 @@ function Invoke-SubItems {
         else {
             $invalidPaths += $fullPath
         }
-        Write-DebugInfo -itemName "fullPath" -itemValue $fullPath -description "Processed subdirectory path"
     }
     
     # Return a custom object containing both valid and invalid paths.
@@ -188,7 +149,6 @@ function Invoke-SubItems {
         Valid   = $validPaths
         Invalid = $invalidPaths
     }
-    Write-DebugInfo -itemName "result" -itemValue $result -description "Result of Invoke-SubItems"
     return $result
 }
 
@@ -206,7 +166,6 @@ function Resolve-SID {
             Valid = $true
             Value = $ntAccount
         }
-        Write-DebugInfo -itemName "SIDResult" -itemValue $result -description "Resolved SID to NT account name"
         return $result
     }
     catch {
@@ -216,7 +175,6 @@ function Resolve-SID {
             Value = $null
             ErrorMessage = $_.Exception.Message
         }
-        Write-DebugInfo -itemName "SIDResult" -itemValue $result -description "Failed to resolve SID"
         return $result
     }
 }
@@ -280,11 +238,8 @@ function Select-ToProcessedPaths {
                 }
             }
         }
-
-        Write-DebugInfo -itemName "ProcessedPath" -itemValue $path -description "Processed directory path for deletion or validation"
     }
     
-    Write-DebugInfo -itemName "Results" -itemValue $results -description "Paths selected for processing"
     return $results
 }
 
@@ -357,26 +312,21 @@ function Remove-Directories {
 
 # Resolve the parent path to an absolute path.
 $parentPath = Resolve-AbsolutePath -inputPath $parentPath
-Write-DebugInfo -itemName "parentPath" -itemValue $parentPath -description "Returned value for function Resolve-AbsolutePath"
 
 # Get the list of subdirectories within the parent path.
 $childItems = Get-SubItems -basePath $parentPath
-Write-DebugInfo -itemName "childItems" -itemValue $childItems -description "Returned value for function Get-SubItems"
 
 # Validate subdirectory paths.
 $validatedPaths = Invoke-SubItems -basePath $parentPath -subItems $childItems
-Write-DebugInfo -itemName "validatedPaths" -itemValue $validatedPaths -description "Returned value for function Invoke-SubItems"
 
 # Get the list of SIDs to ignore.
 $ignoreSIDs = (Get-IgnoreList).SID
-Write-DebugInfo -itemName "ignoreSIDs" -itemValue $ignoreSIDs -description "Returned value for function Get-IgnoreList (SID)"
 
 # Determine the script mode and take action accordingly.
 switch ($mode) {
     "maintain" {
         # In "maintain" mode, process and display the paths, then prompt for deletion.
         $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid
-        Write-DebugInfo -itemName "selectedPaths" -itemValue $selectedPaths -description "Paths selected for processing."
 
         Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
         
@@ -388,7 +338,6 @@ switch ($mode) {
     "show" {
         # In "show" mode, just process and display the paths without deletion.
         $selectedPaths = Select-ToProcessedPaths -paths $validatedPaths.Valid
-        Write-DebugInfo -itemName "selectedPaths" -itemValue $selectedPaths -description "Paths selected for processing."
 
         Show-ValidatedPaths -paths $selectedPaths -message "Directories found in ${parentPath}:"
         
