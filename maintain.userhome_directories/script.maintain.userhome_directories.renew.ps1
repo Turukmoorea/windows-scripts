@@ -53,6 +53,8 @@ function Show-AllExitCode {
     
     # Add rows to the exit code table.
     $table += [PSCustomObject]@{Code = "100"; Row = "69"; Function = "Show-Helppage Trigger" }
+    $table += [PSCustomObject]@{Code = "101"; Row = "104"; Function = "Resolve-AbsolutePath" }
+    $table += [PSCustomObject]@{Code = "102"; Row = "275"; Function = "Show-ValidatedPaths" }
     
     # Display the table in a formatted way.
     $table | Format-Table -AutoSize
@@ -270,7 +272,7 @@ function Show-ValidatedPaths {
         $pathsTable | Format-Table -AutoSize
     } else {
         Write-Output "No valid paths to select."
-        exit
+        exit 102
     }
 }
 
