@@ -139,7 +139,7 @@ function Get-NetIface {
 # It filters by network type, link status, and network name.
 function Select-NetIface {
     param (
-        [Parameter(Mandatory=$true)][psobject[]]$iface,  # The network interfaces to filter.
+        [Parameter(Mandatory=$true)][psobject[]]$iface  # The network interfaces to filter.
         #[ValidateSet("none", "public", "private", "domain")][string[]]$netType,
         #[ValidateSet("up", "down")][string[]]$LinkStatus,
         #[string[]]$netName
