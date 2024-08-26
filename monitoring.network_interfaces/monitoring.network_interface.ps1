@@ -27,6 +27,7 @@ param (
 
     [switch]$prompt = $false,
     [switch]$debug = $false,
+    [switch]$monitoring = $false,
     
     # A string parameter with a limited set of valid values ("fail" or "success").
     # It controls whether the script should be tested for a successful or failed state.
@@ -69,6 +70,8 @@ if ($debug) {
     Write-Host "=== Start Initial Variables ========================================================================="
     Write-Host "DEBUG: help = $help"
     Write-Host "DEBUG: prompt = $prompt"
+    Write-Host "DEBUG: debug = $debug"
+    Write-Host "DEBUG: monitoring = $monitoring"
     Write-Host "DEBUG: netType = $netType"
     Write-Host "DEBUG: multipleNetwork = $multipleNetwork"
     Write-Host "DEBUG: netName = $netName"
@@ -184,7 +187,7 @@ function Select-NetIface {
         # Debug output to show the current interface being processed
         if ($debug) { 
             Write-Host "DEBUG: Processing interface = $($interface.Name) (function Select-NetIface)"
-            Write-Host "DEBUG: NetworkType = $($interface.Networktype), LinkStatus = $($interface.LinkStatus) (function Select-NetIface)"
+            Write-Host "DEBUG: NetworkType = $($interface.Networktype), LinkStatus = $($interface.LinkStatus), NetworkName = $($interface.NetworkName) (function Select-NetIface)"
         }
 
         # Filter by network type if provided
@@ -216,13 +219,10 @@ function Select-NetIface {
         }
 
         if ($debug) { 
-            Write-Host "===== end netType filtering ========================================================================"
+            Write-Host "===== End netType filtering ========================================================================"
+            Write-Host "===== Start LinkStatus filtering ==================================================================="
         }
-
-        if ($debug) { 
-            Write-Host "===== Start linkStats filtering ===================================================================="
-        }
-
+        
         # Filter by link status if provided
         if ($LinkStatus) {
             if ($debug) { Write-Host "DEBUG: LinkStatus = $LinkStatus (function Select-NetIface)" }
@@ -239,7 +239,27 @@ function Select-NetIface {
         }
 
         if ($debug) { 
-            Write-Host "===== End linkStats filtering ======================================================================"
+            Write-Host "===== End LinkStatus filtering ====================================================================="
+            Write-Host "===== Start netName filtering ======================================================================"
+        }
+
+        # Filter by network name if provided
+        if ($netName) {
+            if ($debug) { Write-Host "DEBUG: netName = $netName (function Select-NetIface)" }
+            if ($netName -contains $interface.NetworkName) {
+                if ($includeInterface) {  # Only include if it already passed the previous filters
+                    if ($debug) { Write-Host "DEBUG: Interface '$($interface.Name)' matches NetworkName '$($interface.NetworkName)'." }
+                } else {
+                    $includeInterface = $false
+                }
+            } else {
+                $includeInterface = $false
+                if ($debug) { Write-Host "DEBUG: Interface '$($interface.Name)' does not match any netName filter criteria." }
+            }
+        }
+
+        if ($debug) { 
+            Write-Host "===== End netName filtering ========================================================================"
         }
 
         # If the interface should be included based on the criteria, add it to the filtered list
@@ -255,6 +275,24 @@ function Select-NetIface {
     # Return the filtered interfaces
     return $filteredIfaces
 }
+
+function Get-Proof {
+    param (
+        [Parameter(Mandatory=$true)][psobject[]]$iface  # The network interfaces to filter.
+    )
+    
+    if ($debug) { 
+        Write-Host "=== Start function Get-Proof ======================================================================="
+    }
+
+    
+    
+    if ($debug) { 
+        Write-Host "=== End function Get-Proof ========================================================================="
+    }
+
+}
+
 
 
 # Main script execution ====================================================================================
@@ -288,3 +326,5 @@ if ($prompt) {
     Write-Host "Displaying the filtered network interfaces:"
 }
 $selectedNetIface | Format-Table -AutoSize
+
+Get-Proof -iface $selectedNetIface
