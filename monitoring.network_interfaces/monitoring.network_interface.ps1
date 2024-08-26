@@ -25,6 +25,9 @@ param (
     # A switch to trigger the display of the help page. Alias "h" allows users to call the help with -h.
     [Alias("h")] [switch]$help,  
 
+    [switch]$prompt = $false,
+    [switch]$debug = $false,
+    
     # A string parameter with a limited set of valid values ("fail" or "success").
     # It controls whether the script should be tested for a successful or failed state.
     [ValidateSet("fail", "success")] [string]$proof = "fail",  
@@ -44,7 +47,7 @@ param (
 
     # A string array that allows the user to specify the link status of the network interfaces.
     # Valid values are "up", "down", and "both", with "up" being the default.
-    [ValidateSet("up", "down", "both")] [string[]]$linkStatus = "up"
+    [ValidateSet("Up", "Down", "Both")] [string[]]$linkStatus = "up"
 )
 
 # If 'all' is selected as the network type, set $netType to include all possible network types.
@@ -59,7 +62,18 @@ if ($netName) {
 
 # If 'both' is selected for link status, set $linkStatus to include both "up" and "down".
 if ($linkStatus -contains "both") {
-    $linkStatus = @("up", "down")
+    $linkStatus = @("Up", "Down")
+}
+
+if ($debug) {
+    Write-Host "=== Start Initial Variables ========================================================================="
+    Write-Host "DEBUG: help = $help"
+    Write-Host "DEBUG: prompt = $prompt"
+    Write-Host "DEBUG: netType = $netType"
+    Write-Host "DEBUG: multipleNetwork = $multipleNetwork"
+    Write-Host "DEBUG: netName = $netName"
+    Write-Host "DEBUG: linkStatus = $linkStatus"
+    Write-Host "=== End Initial Variables ==========================================================================="
 }
 
 # Help page function =========================================================================================
@@ -112,6 +126,10 @@ if ($help) {
 # This function retrieves network interfaces using the Get-NetAdapter cmdlet.
 # It collects information such as the interface name, network name, network type, link status, MAC address, interface description, and link speed.
 function Get-NetIface {
+    if ($debug) { 
+        Write-Host "=== Start function Get-NetIface ===================================================================="
+    }
+
     $netIfaces = Get-NetAdapter | Select-Object `
         -Property Name,
                    @{Name='NetworkName'; Expression={(Get-NetConnectionProfile -InterfaceAlias $_.Name).Name}},
@@ -120,6 +138,13 @@ function Get-NetIface {
                    MacAddress,
                    @{Name='InterfaceDescription'; Expression={$_.InterfaceDescription}},
                    LinkSpeed
+
+    # Debug: Ausgabe der abgerufenen Daten
+    if ($debug) {
+        $netIfaces | ForEach-Object {
+            Write-Host "DEBUG: Interface = $($_.Name),NetworkName = $($_.NetworkName), NetworkType = $($_.NetworkType), LinkStatus = $($_.LinkStatus)"
+        }
+    }
 
     # Count the number of network interfaces retrieved.
     $ifaceCount = $netIfaces.Count
@@ -130,9 +155,14 @@ function Get-NetIface {
         IfaceCount = $ifaceCount
     }
 
+    if ($debug) { 
+        Write-Host "=== End function Get-NetIface ======================================================================"
+    }
+
     # Return the custom object containing the interface information.
     return $result
 }
+
 
 # Function to select network interfaces ===================================================================
 # This function filters the network interfaces based on the criteria provided by the user.
@@ -140,55 +170,106 @@ function Get-NetIface {
 function Select-NetIface {
     param (
         [Parameter(Mandatory=$true)][psobject[]]$iface  # The network interfaces to filter.
-        #[ValidateSet("none", "public", "private", "domain")][string[]]$netType,
-        #[ValidateSet("up", "down")][string[]]$LinkStatus,
-        #[string[]]$netName
     )
 
-    # Initialize the filtered interfaces with the provided interfaces.
-    $filteredIfaces = $iface
+    if ($debug) { 
+        Write-Host "=== Start function Select-NetIface ================================================================="
+    }
+    
+    # Initialize an empty array for filtered interfaces
+    $filteredIfaces = @()
 
-    # Filter by network type if provided.
-    if ($netType) {
-        if ($netType -contains 'none') {
-            # If 'none' is selected, include interfaces with no network type or the selected types.
-            $filteredIfaces = $filteredIfaces | Where-Object {
-                !$_.Networktype -or $netType -contains $_.Networktype
+    # Iterate over each interface in the provided array
+    foreach ($interface in $iface) {
+        # Debug output to show the current interface being processed
+        if ($debug) { 
+            Write-Host "DEBUG: Processing interface = $($interface.Name) (function Select-NetIface)"
+            Write-Host "DEBUG: NetworkType = $($interface.Networktype) (function Select-NetIface)"
+        }
+
+        # Filter by network type if provided
+        if ($netType) {
+            if ($debug) { Write-Host "DEBUG: netType = $netType (function Select-NetIface)" }
+            
+            $includeInterface = $false  # Initialize a flag to determine if the interface should be included
+
+            # Check for 'none' condition (i.e., interfaces with no NetworkType)
+            if ($netType -contains 'none') {
+                if (-not [string]::IsNullOrEmpty($interface.Networktype) -eq $false) {
+                    $includeInterface = $true
+                    if ($debug) { Write-Host "DEBUG: Interface '$($interface.Name)' has no NetworkType and 'none' is included." }
+                }
             }
+
+            # Check if the interface's NetworkType matches any of the specified netTypes
+            if ($netType -contains $interface.Networktype) {
+                $includeInterface = $true
+                if ($debug) { Write-Host "DEBUG: Interface '$($interface.Name)' matches NetworkType '$($interface.Networktype)'." }
+            }
+
+            # If the interface should be included based on the criteria, add it to the filtered list
+            if ($includeInterface) {
+                $filteredIfaces += $interface
+            } elseif ($debug) {
+                Write-Host "DEBUG: Interface '$($interface.Name)' does not match any netType filter criteria."
+            }
+
         } else {
-            # Otherwise, filter by the selected network types.
-            $filteredIfaces = $filteredIfaces | Where-Object {
-                $netType -contains $_.Networktype
-            }
+            # If no netType filtering is specified, add the interface to the result
+            $filteredIfaces += $interface
         }
     }
 
     # Filter by link status if provided.
-    if ($LinkStatus) {
-        # Only include interfaces that match the selected link statuses.
-        $filteredIfaces = $filteredIfaces | Where-Object {
-            $LinkStatus -contains $_.Status
-        }
-    }
+    # if ($LinkStatus) {
+    #     # Only include interfaces that match the selected link statuses.
+    #     $filteredIfaces = $filteredIfaces | Where-Object {
+    #         $LinkStatus -contains $_.LinkStatus
+    #     }
+    # }
 
     # Filter by network name if provided.
-    if ($netName) {
-        # Only include interfaces that match the provided network names.
-        $filteredIfaces = $filteredIfaces | Where-Object {
-            $netName -contains $_.NetworkName
-        }
+    # if ($netName) {
+    #     # Only include interfaces that match the provided network names.
+    #     $filteredIfaces = $filteredIfaces | Where-Object {
+    #         $netName -contains $_.NetworkName
+    #     }
+    # }
+
+    if ($debug) { 
+        Write-Host "=== End function Select-NetIface ==================================================================="
     }
 
-    # Return the filtered interfaces.
+    # Return the filtered interfaces
     return $filteredIfaces
 }
 
+
 # Main script execution ====================================================================================
 # Retrieve all network interfaces.
+if ($prompt) { 
+    Write-Host "Fetching all network interfaces..."
+}
 $allNetIface = Get-NetIface
 
+# Check what was retrieved
+if ($debug) {
+    Write-Host "DEBUG: Retrieved interfaces count: $($allNetIface.IfaceCount)"
+}
+
 # Filter the retrieved network interfaces based on the provided criteria.
-$selectedNetIface = Select-NetIface -iface $allNetIface
+if ($prompt) { 
+    Write-Host "Filtering network interfaces..."
+}
+$selectedNetIface = Select-NetIface -iface $allNetIface.IfaceInfo 
+
+# Check the result of the filtering
+if ($debug) {
+    Write-Host "DEBUG: Filtered interfaces count: $($selectedNetIface.Count)"
+}
 
 # Display the filtered network interfaces in a formatted table.
-$selectedNetIface.IfaceInfo | Format-Table -AutoSize
+if ($prompt) { 
+    Write-Host "Displaying the filtered network interfaces:"
+}
+$selectedNetIface | Format-Table -AutoSize
