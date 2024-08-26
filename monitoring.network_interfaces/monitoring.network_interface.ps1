@@ -98,6 +98,9 @@ function Show-Helppage {
     
     # Display the table with the parameters and their descriptions in a formatted table.
     $table | Format-Table -AutoSize
+
+    Write-Host "#Example ==========================================================================================="
+    Write-Host '.\monitoring.network_interface.ps1 -proof success -multipleNetwork -netType public, private -netName "if.internal" -linkStatus Down'
 }
 
 # Exit code function =========================================================================================
@@ -278,21 +281,71 @@ function Select-NetIface {
 
 function Get-Proof {
     param (
-        [Parameter(Mandatory=$true)][psobject[]]$iface  # The network interfaces to filter.
+        [psobject[]]$iface  # The network interfaces to filter.
     )
     
     if ($debug) { 
         Write-Host "=== Start function Get-Proof ======================================================================="
     }
 
+    # Count the number of network interfaces provided
+    $ifaceCount = $iface.Count
+
+    # Extract the NetworkName property from each interface and filter out empty names
+    $networkNames = $iface | Select-Object -ExpandProperty NetworkName
+    $nonEmptyNames = $networkNames | Where-Object { $_ -ne "" }
+
+    # Determine whether the network names are considered unique
+    # If only one network name is present, it is considered unique regardless of the multipleNetwork parameter
+    if ($nonEmptyNames.Count -le 1) {
+        # Only one unique non-empty network name exists
+        $allNetworksUnique = $true
+    } else {
+        # If more than one network name is present, check uniqueness based on the multipleNetwork parameter
+        if ($multipleNetwork) {
+            # If multipleNetwork is true, check if there are multiple unique non-empty network names
+            $allNetworksUnique = ($nonEmptyNames | Select-Object -Unique).Count -gt 1
+        } else {
+            # If multipleNetwork is false, check if all non-empty network names are identical
+            $allNetworksUnique = ($nonEmptyNames | Select-Object -Unique).Count -le 1
+        }
+    }
+
+    # Debug output to show the network names and the uniqueness determination
+    if ($debug) {
+        Write-Host "DEBUG: NetworkNames = $networkNames"
+        Write-Host "DEBUG: NonEmptyNames = $nonEmptyNames"
+        Write-Host "DEBUG: allNetworksUnique = $allNetworksUnique"
+    }
+
+    # Determine the exit code based on the value of the proof parameter
+    if ($proof -eq "success") {
+        # If proof is "success", exit with 0 (success) if there is at least one interface and network names are unique
+        if ($ifaceCount -ge 1 -and $allNetworksUnique) {
+            exit 0
+        } else {
+            # Otherwise, exit with 1 (failure)
+            exit 1
+        }
+    } elseif ($proof -eq "fail") {
+        # If proof is "fail", exit with 1 (failure) if there is at least one interface and network names are unique
+        if ($ifaceCount -ge 1 -and $allNetworksUnique) {
+            exit 1
+        } else {
+            # Otherwise, exit with 0 (success)
+            exit 0
+        }
+    } else {
+        # If proof has an unknown value, print an error and exit with 1 (failure)
+        Write-Host "Unknown value for 'proof': $proof"
+        exit 1
+    }
     
-    
+    # End of function debug output
     if ($debug) { 
         Write-Host "=== End function Get-Proof ========================================================================="
     }
-
 }
-
 
 
 # Main script execution ====================================================================================
@@ -320,7 +373,7 @@ if ($debug) {
 
 # Display the filtered network interfaces in a formatted table.
 if ($debug) { 
-    Write-Host "=== Final Output | Debug is finished ==============================================================="
+    Write-Host "=== Final Output ==================================================================================="
 }
 if ($prompt) { 
     Write-Host "Displaying the filtered network interfaces:"
