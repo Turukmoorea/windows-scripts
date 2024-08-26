@@ -184,14 +184,18 @@ function Select-NetIface {
         # Debug output to show the current interface being processed
         if ($debug) { 
             Write-Host "DEBUG: Processing interface = $($interface.Name) (function Select-NetIface)"
-            Write-Host "DEBUG: NetworkType = $($interface.Networktype) (function Select-NetIface)"
+            Write-Host "DEBUG: NetworkType = $($interface.Networktype), LinkStatus = $($interface.LinkStatus) (function Select-NetIface)"
         }
 
         # Filter by network type if provided
+        $includeInterface = $false  # Initialize a flag to determine if the interface should be included
+
+        if ($debug) { 
+            Write-Host "===== Start netType filtering ======================================================================"
+        }
+
         if ($netType) {
             if ($debug) { Write-Host "DEBUG: netType = $netType (function Select-NetIface)" }
-            
-            $includeInterface = $false  # Initialize a flag to determine if the interface should be included
 
             # Check for 'none' condition (i.e., interfaces with no NetworkType)
             if ($netType -contains 'none') {
@@ -206,35 +210,43 @@ function Select-NetIface {
                 $includeInterface = $true
                 if ($debug) { Write-Host "DEBUG: Interface '$($interface.Name)' matches NetworkType '$($interface.Networktype)'." }
             }
-
-            # If the interface should be included based on the criteria, add it to the filtered list
-            if ($includeInterface) {
-                $filteredIfaces += $interface
-            } elseif ($debug) {
-                Write-Host "DEBUG: Interface '$($interface.Name)' does not match any netType filter criteria."
-            }
-
         } else {
-            # If no netType filtering is specified, add the interface to the result
+            # If no netType filtering is specified, set the flag to true
+            $includeInterface = $true
+        }
+
+        if ($debug) { 
+            Write-Host "===== end netType filtering ========================================================================"
+        }
+
+        if ($debug) { 
+            Write-Host "===== Start linkStats filtering ===================================================================="
+        }
+
+        # Filter by link status if provided
+        if ($LinkStatus) {
+            if ($debug) { Write-Host "DEBUG: LinkStatus = $LinkStatus (function Select-NetIface)" }
+            if ($LinkStatus -contains $interface.LinkStatus) {
+                if ($includeInterface) {  # Only include if it already passed the netType filter
+                    if ($debug) { Write-Host "DEBUG: Interface '$($interface.Name)' matches LinkStatus '$($interface.LinkStatus)'." }
+                } else {
+                    $includeInterface = $false
+                }
+            } else {
+                $includeInterface = $false
+                if ($debug) { Write-Host "DEBUG: Interface '$($interface.Name)' does not match LinkStatus '$($interface.LinkStatus)'." }
+            }
+        }
+
+        if ($debug) { 
+            Write-Host "===== End linkStats filtering ======================================================================"
+        }
+
+        # If the interface should be included based on the criteria, add it to the filtered list
+        if ($includeInterface) {
             $filteredIfaces += $interface
         }
     }
-
-    # Filter by link status if provided.
-    # if ($LinkStatus) {
-    #     # Only include interfaces that match the selected link statuses.
-    #     $filteredIfaces = $filteredIfaces | Where-Object {
-    #         $LinkStatus -contains $_.LinkStatus
-    #     }
-    # }
-
-    # Filter by network name if provided.
-    # if ($netName) {
-    #     # Only include interfaces that match the provided network names.
-    #     $filteredIfaces = $filteredIfaces | Where-Object {
-    #         $netName -contains $_.NetworkName
-    #     }
-    # }
 
     if ($debug) { 
         Write-Host "=== End function Select-NetIface ==================================================================="
@@ -269,6 +281,9 @@ if ($debug) {
 }
 
 # Display the filtered network interfaces in a formatted table.
+if ($debug) { 
+    Write-Host "=== Final Output | Debug is finished ==============================================================="
+}
 if ($prompt) { 
     Write-Host "Displaying the filtered network interfaces:"
 }
