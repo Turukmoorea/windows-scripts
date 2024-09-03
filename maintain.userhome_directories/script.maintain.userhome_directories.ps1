@@ -16,14 +16,16 @@
 
 #param ============================================================================================
 param (
-    [switch]$help,  # Switch to trigger the help page.
-    [switch]$h,     # Alternative switch to trigger the help page (alias).
+    [Alias("h")] [switch]$help,  # Switch to trigger the help page.
 
     [string]$mode = "maintain",          # Mode of operation, with a default value of "maintain".
     [string]$parentPath = $(Get-Location), # The parent directory path to operate on, defaulting to the current directory.
     [bool]$prompt = $true,               # Flag indicating whether to prompt the user for confirmation.
     [string]$emptyDirectories = "retain"  # Specifies how to handle empty directories, defaulting to "retain".
 )
+
+
+
 
 #Helppage =========================================================================================
 # Function to display the help page.
@@ -200,60 +202,50 @@ function Select-ToProcessedPaths {
         
         # Get the Access Control List (ACL) and filter out ignored SIDs.
         $acl = Get-Acl -Path $path
-        $aclEntries = $acl.Access | Where-Object {
-            $identityReference = $_.IdentityReference
-            $sid = $null
-            if ($identityReference -ne $null) {
-                $sid = $identityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        $ownerSid = $acl.Owner
+    
+        # Attempt to resolve the SID to a username
+        if ($ownerSid -match "^S-\d-\d+-\d+-\d+-\d+-\d+-\d+$" -or $ownerSid -match "^O:S-\d-\d+-\d+-\d+-\d+-\d+-\d+$") {
+            try {
+                $ownerName = (New-Object System.Security.Principal.SecurityIdentifier($ownerSid)).Translate([System.Security.Principal.NTAccount]).Value
+                $sidValid = $false
+            } catch {
+                $ownerName = "$ownerSid (Unresolved SID)"
+                $sidValid = $true
             }
-            $ignoreSIDs -notcontains $sid
-        } | ForEach-Object {
-            "$($_.IdentityReference)"
+        } else {
+            $ownerName = $ownerSid
+            $sidValid = $false
         }
-        
-        # Convert ACL entries to a comma-separated string.
-        $aclString = $aclEntries -join ", "
-
-        # Check if there are unresolved SIDs.
-        $unresolvedSIDs = $acl.Access | Where-Object {
-            $sid = $null
-            if ($_.IdentityReference -ne $null) {
-                $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
-            }
-            ($ignoreSIDs -notcontains $sid) -and -not (Resolve-SID -sid $sid)
-        }
-        
+    
         # Add directory to results based on the selected mode.
         if ($mode -eq "show all") {
-            # In "show all" mode, include all directories.
+            # Ungefiltert alle Einträge berücksichtigen
             $results += [PSCustomObject]@{
                 Path  = $path
                 Name  = [System.IO.Path]::GetFileName($path)
                 Empty = $isEmpty
-                ACL   = $aclString
+                Owner = $ownerName
             }
         } else {
-            # In "show" mode, include directories based on specified conditions.
-            if ($emptyDirectories -eq "delete") {
-                if ($isEmpty -or $unresolvedSIDs.Count -gt 0) {
-                    $results += [PSCustomObject]@{
-                        Path  = $path
-                        Name  = [System.IO.Path]::GetFileName($path)
-                        Empty = $isEmpty
-                        ACL   = $aclString
-                    }
+            # Prüfen, ob leere Ordner berücksichtigt werden sollen
+            if ($emptyDirectories -eq "delete" -and $isEmpty) {
+                $results += [PSCustomObject]@{
+                    Path  = $path
+                    Name  = [System.IO.Path]::GetFileName($path)
+                    Empty = $isEmpty
+                    Owner = $ownerName
                 }
-            } else {
-                if (($isEmpty -and $unresolvedSIDs.Count -gt 0) -or -not $isEmpty -and $unresolvedSIDs.Count -gt 0) {
-                    $results += [PSCustomObject]@{
-                        Path  = $path
-                        Name  = [System.IO.Path]::GetFileName($path)
-                        Empty = $isEmpty
-                        ACL   = $aclString
-                    }
+            } elseif ($sidValid -or ($sidValid -eq $false -and $emptyDirectories -eq "delete" -and $isEmpty)) {
+                # SID ist gültig oder ungültig, aber im delete-Modus und Ordner ist leer
+                $results += [PSCustomObject]@{
+                    Path  = $path
+                    Name  = [System.IO.Path]::GetFileName($path)
+                    Empty = $isEmpty
+                    Owner = $ownerName
                 }
             }
-        }
+        }        
     }
     
     return $results
@@ -279,7 +271,7 @@ function Show-ValidatedPaths {
                 Index = $i
                 Directory = $_.Name  # Only show the directory name.
                 Status = $emptyFolder
-                ACL = $_.ACL
+                Owner = $_.Owner
             }
             $i++
         }
