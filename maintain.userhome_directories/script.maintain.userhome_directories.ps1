@@ -18,14 +18,11 @@
 param (
     [Alias("h")] [switch]$help,  # Switch to trigger the help page.
 
-    [string]$mode = "maintain",          # Mode of operation, with a default value of "maintain".
+    [ValidateSet("maintain", "show", "show all")] [string]$mode = "maintain",          # Mode of operation, with a default value of "maintain".
     [string]$parentPath = $(Get-Location), # The parent directory path to operate on, defaulting to the current directory.
     [bool]$prompt = $true,               # Flag indicating whether to prompt the user for confirmation.
-    [string]$emptyDirectories = "retain"  # Specifies how to handle empty directories, defaulting to "retain".
+    [ValidateSet("retain", "delete")] [string]$emptyDirectories = "retain"  # Specifies how to handle empty directories, defaulting to "retain".
 )
-
-
-
 
 #Helppage =========================================================================================
 # Function to display the help page.
@@ -38,10 +35,10 @@ function Show-Helppage {
     
     # Define the parameters and descriptions to be displayed in the help page.
     $table += [PSCustomObject]@{Parameter = "-help, -h   "; Options = ""; Default = ""; Description = "Display this help page." }
-    $table += [PSCustomObject]@{Parameter = "-mode <string>   "; Options = "maintain, show, show all   "; Default = "maintain"; Description = "Select the script mode." }
+    $table += [PSCustomObject]@{Parameter = "-mode <option>   "; Options = "maintain, show, show all   "; Default = "maintain"; Description = "Select the script mode." }
     $table += [PSCustomObject]@{Parameter = "-parentPath <string>   "; Options = ""; Default = "current path   "; Description = "The absolute or relative parent directory path to access." }
     $table += [PSCustomObject]@{Parameter = "-prompt <bool>   "; Options = "0, `$false, 1, `$true   "; Default = "true   "; Description = "Flag indicating whether to prompt the user for confirmation." }
-    $table += [PSCustomObject]@{Parameter = "-emptyDirectories <string>   "; Options = "retain, delete   "; Default = "retain   "; Description = "Specifies how to handle empty directories." }
+    $table += [PSCustomObject]@{Parameter = "-emptyDirectories <option>   "; Options = "retain, delete   "; Default = "retain   "; Description = "Specifies how to handle empty directories." }
     
     # Display the table in a formatted way.
     $table | Format-Table -AutoSize
