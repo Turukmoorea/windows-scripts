@@ -3,7 +3,7 @@
     monitoring.network_interface.ps1
 
 .VERSION
-    1.0
+    1.0.1
 
 .AUTHOR
     Turukmoorea (github.com/turukmoorea)
@@ -36,7 +36,7 @@ param (
     # An array of strings specifying the network types to be considered.
     # Valid values include "none", "public", "private", "domain", and "all".
     # The default is "all", which includes all network types.
-    [ValidateSet("none", "public", "private", "domain", "all")] [string[]]$netType = @("all"),  
+    [ValidateSet("none", "public", "private", "domainauthenticated", "all")] [string[]]$netType = @("all"),  
 
     # A switch that determines whether multiple networks are allowed.
     # If set to true, the script will check if the system is part of multiple networks.
@@ -53,7 +53,7 @@ param (
 
 # If 'all' is selected as the network type, set $netType to include all possible network types.
 if ($netType -contains "all") {
-    $netType = @("none", "public", "private", "domain")
+    $netType = @("None", "Public", "Private", "DomainAuthenticated")
 }
 
 # If the $netName parameter is provided, split the names by commas to allow multiple network names.
