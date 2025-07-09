@@ -115,7 +115,6 @@ $TransferMode = "copy"
 # ------------------------------------------------------------
 $TransferType = "all"
 
-
 # ------------------------------------------------------------
 # Define whether to output status messages to the console.
 # Set to $true for verbose output, $false for silent mode.
