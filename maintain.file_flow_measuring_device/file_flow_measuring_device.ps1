@@ -3,7 +3,7 @@
 Script Name:    file_flow_measuring_device.ps1
 Author:         Turukmoorea
 Contact:        mail@turukmoorea.ch
-Repository:     https://github.com/Turukmoorea/your-repo
+Repository:     https://github.com/Turukmoorea/windows-scripts
 Last Updated:   2025-07-09
 License:        Unlicense (https://unlicense.org)
 
@@ -52,7 +52,7 @@ param (
     [string]$TransferModeParam,
 
     [Alias("t", "type")]
-    [ValidateSet("all", "files", "all-files")]
+    [ValidateSet("all", "files", "all-files", "all-files-delete-dir")]
     [string]$TransferTypeParam,
 
     [Alias("v", "debug")]
@@ -61,15 +61,15 @@ param (
 
 # ------------------------------------------------------------
 # Define the source directory where the file is located.
-# Must be an absolute path. Example: "C:\Input"
+# Must be an absolute path (e.g. "C:\source") or a relative path based on the script's location.
 # ------------------------------------------------------------
-$FileSourceDir = "C:\Users\timon.bachmann\OneDrive - MAIT GmbH\Dokumente\GitHub\file_flow_measuring_device\test_source"
+$FileSourceDir = "test_source"
 
 # ------------------------------------------------------------
 # Define the destination directory where the file will be copied or moved.
-# Must be an absolute path. Example: "C:\Output"
+# Must be an absolute path (e.g. "C:\destination") or a relative path based on the script's location.
 # ------------------------------------------------------------
-$FileDestinationDir = "C:\Users\timon.bachmann\OneDrive - MAIT GmbH\Dokumente\GitHub\file_flow_measuring_device\test_destination"
+$FileDestinationDir = "test_destination"
 
 # ------------------------------------------------------------
 # Define the transfer mode.
@@ -179,3 +179,225 @@ if ($Verbose) {
     Write-Host "Set Destination directory validated: $FileDestinationDir"
 }
 
+# ------------------------------------------------------------
+# Function: Get-UniqueDestinationPath
+# Purpose : Generate a unique destination path by checking
+#           for collisions and adding an incremental number
+#           if necessary.
+#
+# Description:
+#   This function checks whether a file or directory already
+#   exists at the destination path. If it does, an incremental
+#   number (_1, _2, _3, ...) is appended until a free name
+#   is found.
+#
+# Parameters:
+#   [string]$BaseName - The base name of the file or folder.
+#   [string]$Extension - The extension (e.g. ".txt") or empty for folders.
+#   [string]$DestinationDir - The target root directory.
+#
+# Returns:
+#   [string] - A unique destination path.
+# ------------------------------------------------------------
+function Get-UniqueDestinationPath {
+    param (
+        [string]$BaseName,
+        [string]$Extension,
+        [string]$DestinationDir
+    )
+
+    $CandidateName = "$BaseName$Extension"
+    $DestPath = Join-Path -Path $DestinationDir -ChildPath $CandidateName
+
+    if (Test-Path $DestPath) {
+        $Counter = 1
+        do {
+            $CandidateName = "{0}_{1}{2}" -f $BaseName, $Counter, $Extension
+            $DestPath = Join-Path -Path $DestinationDir -ChildPath $CandidateName
+            $Counter++
+        } while (Test-Path $DestPath)
+    }
+
+    if ($Verbose) {
+        if ($CandidateName -ne "$BaseName$Extension") {
+            Write-Host "Collision detected. Using unique name: $CandidateName"
+        }
+    }
+
+    return $DestPath
+}
+
+# ------------------------------------------------------------
+# Perform the file or directory transfer based on TransferType and TransferMode.
+#
+# This version ensures that no files or folders are ever overwritten
+# at the destination. Instead, Get-UniqueDestinationPath guarantees
+# unique names by adding incremental suffixes (_1, _2, _3, ...).
+# ------------------------------------------------------------
+
+if ($Verbose) {
+    Write-Host "------------------------------------------------------------"
+    Write-Host "Starting transfer process..."
+    Write-Host "Source Directory     : $FileSourceDir"
+    Write-Host "Destination Directory: $FileDestinationDir"
+    Write-Host "Transfer Mode        : $TransferMode"
+    Write-Host "Transfer Type        : $TransferType"
+    Write-Host "------------------------------------------------------------"
+}
+
+try {
+
+    switch ($TransferType) {
+
+        "all" {
+            # ------------------------------------------------------------
+            # Transfer Type: all
+            # Description:
+            #   Copy or move the entire source content, preserving the
+            #   directory structure. Each item is processed individually
+            #   to avoid overwriting existing items at the destination.
+            # ------------------------------------------------------------
+            if ($Verbose) {
+                Write-Host "Transfer Type: all - transferring entire structure with collision protection."
+            }
+
+            $Items = Get-ChildItem -Path $FileSourceDir
+
+            foreach ($Item in $Items) {
+                $BaseName = $Item.BaseName
+                $Extension = $Item.Extension
+                if ($Item.PSIsContainer) {
+                    # For folders: no extension
+                    $DestPath = Get-UniqueDestinationPath -BaseName $Item.Name -Extension "" -DestinationDir $FileDestinationDir
+                } else {
+                    $DestPath = Get-UniqueDestinationPath -BaseName $BaseName -Extension $Extension -DestinationDir $FileDestinationDir
+                }
+
+                if ($TransferMode -eq "copy") {
+                    Copy-Item -Path $Item.FullName -Destination $DestPath -Recurse -Force
+                } elseif ($TransferMode -eq "move") {
+                    Move-Item -Path $Item.FullName -Destination $DestPath -Force
+                }
+
+                if ($Verbose) {
+                    Write-Host "Processed item: $($Item.FullName) -> $DestPath"
+                }
+            }
+        }
+
+        "files" {
+            if ($Verbose) {
+                Write-Host "Transfer Type: files - transferring only files in source root with collision protection."
+            }
+
+            $Files = Get-ChildItem -Path $FileSourceDir -File
+            foreach ($File in $Files) {
+                $DestPath = Get-UniqueDestinationPath -BaseName $File.BaseName -Extension $File.Extension -DestinationDir $FileDestinationDir
+
+                if ($TransferMode -eq "copy") {
+                    Copy-Item -Path $File.FullName -Destination $DestPath -Force
+                } elseif ($TransferMode -eq "move") {
+                    Move-Item -Path $File.FullName -Destination $DestPath -Force
+                }
+
+                if ($Verbose) {
+                    Write-Host "Processed file: $($File.FullName) -> $DestPath"
+                }
+            }
+        }
+
+        "all-files" {
+            if ($Verbose) {
+                Write-Host "Transfer Type: all-files - transferring all files recursively, flattened, with collision protection."
+            }
+
+            $Files = Get-ChildItem -Path $FileSourceDir -File -Recurse
+            foreach ($File in $Files) {
+                $DestPath = Get-UniqueDestinationPath -BaseName $File.BaseName -Extension $File.Extension -DestinationDir $FileDestinationDir
+
+                if ($TransferMode -eq "copy") {
+                    Copy-Item -Path $File.FullName -Destination $DestPath -Force
+                } elseif ($TransferMode -eq "move") {
+                    Move-Item -Path $File.FullName -Destination $DestPath -Force
+                }
+
+                if ($Verbose) {
+                    Write-Host "Processed file: $($File.FullName) -> $DestPath"
+                }
+            }
+        }
+
+        "all-files-delete-dir" {
+            if ($Verbose) {
+                Write-Host "Transfer Type: all-files-delete-dir - transferring all files recursively, flattened, with collision protection."
+                Write-Host "After transfer, source directories will be deleted only if TransferMode is 'move'."
+            }
+
+            $Files = Get-ChildItem -Path $FileSourceDir -File -Recurse
+            foreach ($File in $Files) {
+                $DestPath = Get-UniqueDestinationPath -BaseName $File.BaseName -Extension $File.Extension -DestinationDir $FileDestinationDir
+
+                if ($TransferMode -eq "copy") {
+                    Copy-Item -Path $File.FullName -Destination $DestPath -Force
+                } elseif ($TransferMode -eq "move") {
+                    Move-Item -Path $File.FullName -Destination $DestPath -Force
+                }
+
+                if ($Verbose) {
+                    Write-Host "Processed file: $($File.FullName) -> $DestPath"
+                }
+            }
+
+            if ($TransferMode -eq "move") {
+                if ($Verbose) {
+                    Write-Host "Deleting leftover source directories since TransferMode is 'move'."
+                }
+
+                $Directories = Get-ChildItem -Path $FileSourceDir -Directory -Recurse
+                foreach ($Dir in $Directories) {
+                    try {
+                        Remove-Item -Path $Dir.FullName -Force -Recurse -ErrorAction Stop
+                        if ($Verbose) {
+                            Write-Host "Deleted directory: $($Dir.FullName)"
+                        }
+                    } catch {
+                        if ($Verbose) {
+                            Write-Warning "Could not delete directory: $($Dir.FullName). It may not be empty or may be in use."
+                        }
+                    }
+                }
+            } else {
+                if ($Verbose) {
+                    Write-Host "TransferMode is 'copy'. Source directories will not be deleted."
+                }
+            }
+        }
+
+        default {
+            Write-Error "Invalid TransferType specified: $TransferType"
+            exit 1
+        }
+    }
+
+    if ($Verbose) {
+        Write-Host "------------------------------------------------------------"
+        Write-Host "Transfer completed successfully."
+        Write-Host "------------------------------------------------------------"
+    }
+
+    if (-not (Test-Path $FileDestinationDir)) {
+        Write-Error "Destination directory does not exist after transfer operation."
+        exit 1
+    }
+
+    exit 0
+
+} catch {
+    Write-Error "An error occurred during the transfer: $_"
+    exit 1
+}
+
+
+if ($Verbose) {
+    Write-Host "Transfer completed successfully."
+}
