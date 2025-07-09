@@ -26,10 +26,10 @@ Description:
 
 Usage Example:
     # Copy all files recursively and flatten structure:
-    .\file_flow_measuring_device.ps1 -s "C:\Input" -d "C:\Output" -m "copy" -t "all-files" -v
+    .\file_flow_measuring_device.ps1 -s "C:\Source" -d "C:\Destination" -m "copy" -t "all-files" -v
 
     # Move files and delete leftover empty folders:
-    .\file_flow_measuring_device.ps1 -s "C:\Input" -d "C:\Output" -m "move" -t "all-files-delete-dir" -v
+    .\file_flow_measuring_device.ps1 -s "C:\Source" -d "C:\Destination" -m "move" -t "all-files-delete-dir" -v
 
 Parameters:
     -s, --source           : Source directory path (absolute or relative)
@@ -44,17 +44,8 @@ Parameters:
     -v, --verbose, --debug : Enable verbose output.
     --silent, --quiet      : Disable all output messages.
 
-Global Variables:
-    $FileSourceDir         : Source directory (e.g. "C:\Input")
-    $FileDestinationDir    : Destination directory (e.g. "C:\Output")
-    $TransferMode          : "copy" or "move" (default: "copy")
-    $TransferType          : "all", "files", "all-files", "all-files-delete-dir" (default: "all")
-    $Verbose               : Controls output (default: $false)
-
 Dependencies:
-    - Requires only built-in PowerShell cmdlets: Copy-Item, Move-Item,
-      Get-ChildItem, Resolve-Path, Remove-Item.
-    - No external modules or binaries needed.
+    - Requires only built-in PowerShell cmdlets: Copy-Item, Move-Item, Get-ChildItem, Resolve-Path, Remove-Item.
 
 Notes:
     - Always run this script with appropriate file system permissions.
@@ -385,310 +376,316 @@ if ($Verbose) {
 try {
 
     switch ($TransferType) {
+		"all" {
+			# ------------------------------------------------------------
+			# Transfer Type: all
+			# Purpose :
+			#   Copy or move the entire source content, preserving the
+			#   original directory structure. Every file and folder
+    	    #   is processed individually to ensure that no existing
+            	#   items at the destination are overwritten.
+			#
+			# Description:
+			#   - Iterates through all immediate children (files and folders)
+			#     in the source directory.
+			#   - For each item, calls Get-UniqueDestinationPath to create
+			#     a unique name if a name collision would occur.
+			#   - Uses Copy-Item with -Recurse for folders and files.
+			#   - Supports both Copy and Move modes based on TransferMode.
+			#   - Verbose mode outputs detailed info for each processed item.
+			#
+			# Example:
+			#   If the source contains "project" and a folder "project"
+			#   already exists at the destination, the function will
+			#   rename it to "project_1" or higher to avoid overwrite.
+			#
+			# Notes:
+			#   Uses built-in Get-ChildItem, Copy-Item, and Move-Item.
+			#   Safe for nested structures since folders are handled
+			#   with -Recurse.
+			# ------------------------------------------------------------
+			if ($Verbose) {
+				# Output info about what will happen in this block
+				Write-Host "Transfer Type: all - transferring entire structure with collision protection."
+			}
 
-                # ------------------------------------------------------------
-        # Transfer Type: all
-        # Purpose :
-        #   Copy or move the entire source content, preserving the
-        #   original directory structure. Every file and folder
-        #   is processed individually to ensure that no existing
-        #   items at the destination are overwritten.
-        #
-        # Description:
-        #   - Iterates through all immediate children (files and folders)
-        #     in the source directory.
-        #   - For each item, calls Get-UniqueDestinationPath to create
-        #     a unique name if a name collision would occur.
-        #   - Uses Copy-Item with -Recurse for folders and files.
-        #   - Supports both Copy and Move modes based on TransferMode.
-        #   - Verbose mode outputs detailed info for each processed item.
-        #
-        # Example:
-        #   If the source contains "project" and a folder "project"
-        #   already exists at the destination, the function will
-        #   rename it to "project_1" or higher to avoid overwrite.
-        #
-        # Notes:
-        #   Uses built-in Get-ChildItem, Copy-Item, and Move-Item.
-        #   Safe for nested structures since folders are handled
-        #   with -Recurse.
-        # ------------------------------------------------------------
-        if ($Verbose) {
-            # Output info about what will happen in this block
-            Write-Host "Transfer Type: all - transferring entire structure with collision protection."
-        }
+			# Get all files and folders in the root of the source directory
+			$Items = Get-ChildItem -Path $FileSourceDir
 
-        # Get all files and folders in the root of the source directory
-        $Items = Get-ChildItem -Path $FileSourceDir
+			# Iterate through each item to handle it individually
+			foreach ($Item in $Items) {
 
-        # Iterate through each item to handle it individually
-        foreach ($Item in $Items) {
+				# Extract the base name and extension for collision checks
+				$BaseName = $Item.BaseName
+				$Extension = $Item.Extension
 
-            # Extract the base name and extension for collision checks
-            $BaseName = $Item.BaseName
-            $Extension = $Item.Extension
+				# --------------------------------------------------------
+				# If the item is a folder (PSIsContainer = $true),
+				# pass its name as BaseName and no extension.
+				# Otherwise, pass both BaseName and Extension.
+				# --------------------------------------------------------
+				if ($Item.PSIsContainer) {
+					$DestPath = Get-UniqueDestinationPath `
+						-BaseName $Item.Name `
+						-Extension "" `
+						-DestinationDir $FileDestinationDir
+				} else {
+					$DestPath = Get-UniqueDestinationPath `
+						-BaseName $BaseName `
+						-Extension $Extension `
+						-DestinationDir $FileDestinationDir
+				}
 
-            # --------------------------------------------------------
-            # If the item is a folder (PSIsContainer = $true),
-            # pass its name as BaseName and no extension.
-            # Otherwise, pass both BaseName and Extension.
-            # --------------------------------------------------------
-            if ($Item.PSIsContainer) {
-                $DestPath = Get-UniqueDestinationPath `
-                    -BaseName $Item.Name `
-                    -Extension "" `
-                    -DestinationDir $FileDestinationDir
-            } else {
-                $DestPath = Get-UniqueDestinationPath `
-                    -BaseName $BaseName `
-                    -Extension $Extension `
-                    -DestinationDir $FileDestinationDir
-            }
+				# --------------------------------------------------------
+				# Perform the copy or move operation.
+				# Copy-Item uses -Recurse for folders, safe for files too.
+				# --------------------------------------------------------
+				if ($TransferMode -eq "copy") {
+					Copy-Item -Path $Item.FullName -Destination $DestPath -Recurse -Force
+				} elseif ($TransferMode -eq "move") {
+					Move-Item -Path $Item.FullName -Destination $DestPath -Force
+				}
+	
+				# --------------------------------------------------------
+				# If Verbose is enabled, output the source and final
+				# destination path for traceability.
+				# --------------------------------------------------------
+				if ($Verbose) {
+					Write-Host "Processed item: $($Item.FullName) -> $DestPath"
+				}
+			}
+		}
+		
+		"files" {
+			# ------------------------------------------------------------
+			# Transfer Type: files
+			# Purpose :
+			#   Copy or move only the files located directly in the root
+			#   of the source directory. Subfolders are ignored.
+			#
+			# Description:
+			#   - Finds all files in the top-level source directory.
+			#   - Uses Get-UniqueDestinationPath to ensure that each file
+			#     does not overwrite an existing file in the destination.
+			#   - Supports both Copy and Move operations.
+			#   - Verbose mode outputs detailed info for each processed file.
+			#
+			# Example:
+			#   If "report.txt" already exists in the destination,
+			#   the function will rename it to "report_1.txt" or higher.
+			#
+			# Notes:
+			#   Uses built-in Get-ChildItem, Copy-Item, and Move-Item.
+			#   Only files are included; folders are skipped.
+			# ------------------------------------------------------------
+			if ($Verbose) {
+				# Output info about what will happen in this block
+				Write-Host "Transfer Type: files - transferring only files in source root with collision protection."
+			}
 
-            # --------------------------------------------------------
-            # Perform the copy or move operation.
-            # Copy-Item uses -Recurse for folders, safe for files too.
-            # --------------------------------------------------------
-            if ($TransferMode -eq "copy") {
-                Copy-Item -Path $Item.FullName -Destination $DestPath -Recurse -Force
-            } elseif ($TransferMode -eq "move") {
-                Move-Item -Path $Item.FullName -Destination $DestPath -Force
-            }
+			# Get all files directly in the source directory (non-recursive)
+			$Files = Get-ChildItem -Path $FileSourceDir -File
 
-            # --------------------------------------------------------
-            # If Verbose is enabled, output the source and final
-            # destination path for traceability.
-            # --------------------------------------------------------
-            if ($Verbose) {
-                Write-Host "Processed item: $($Item.FullName) -> $DestPath"
-            }
-        }
+			# Iterate through each file to process individually
+			foreach ($File in $Files) {
 
-        # ------------------------------------------------------------
-        # Transfer Type: files
-        # Purpose :
-        #   Copy or move only the files located directly in the root
-        #   of the source directory. Subfolders are ignored.
-        #
-        # Description:
-        #   - Finds all files in the top-level source directory.
-        #   - Uses Get-UniqueDestinationPath to ensure that each file
-        #     does not overwrite an existing file in the destination.
-        #   - Supports both Copy and Move operations.
-        #   - Verbose mode outputs detailed info for each processed file.
-        #
-        # Example:
-        #   If "report.txt" already exists in the destination,
-        #   the function will rename it to "report_1.txt" or higher.
-        #
-        # Notes:
-        #   Uses built-in Get-ChildItem, Copy-Item, and Move-Item.
-        #   Only files are included; folders are skipped.
-        # ------------------------------------------------------------
-        if ($Verbose) {
-            # Output info about what will happen in this block
-            Write-Host "Transfer Type: files - transferring only files in source root with collision protection."
-        }
+				# --------------------------------------------------------
+				# Get a unique destination path for this file to prevent
+				# overwriting an existing file with the same name.
+				# --------------------------------------------------------
+				$DestPath = Get-UniqueDestinationPath `
+					-BaseName $File.BaseName `
+					-Extension $File.Extension `
+					-DestinationDir $FileDestinationDir
+	
+				# --------------------------------------------------------
+				# Perform the copy or move operation.
+				# --------------------------------------------------------
+				if ($TransferMode -eq "copy") {
+					Copy-Item -Path $File.FullName -Destination $DestPath -Force
+				} elseif ($TransferMode -eq "move") {
+					Move-Item -Path $File.FullName -Destination $DestPath -Force
+				}
 
-        # Get all files directly in the source directory (non-recursive)
-        $Files = Get-ChildItem -Path $FileSourceDir -File
-
-        # Iterate through each file to process individually
-        foreach ($File in $Files) {
-
-            # --------------------------------------------------------
-            # Get a unique destination path for this file to prevent
-            # overwriting an existing file with the same name.
-            # --------------------------------------------------------
-            $DestPath = Get-UniqueDestinationPath `
-                -BaseName $File.BaseName `
-                -Extension $File.Extension `
-                -DestinationDir $FileDestinationDir
-
-            # --------------------------------------------------------
-            # Perform the copy or move operation.
-            # --------------------------------------------------------
-            if ($TransferMode -eq "copy") {
-                Copy-Item -Path $File.FullName -Destination $DestPath -Force
-            } elseif ($TransferMode -eq "move") {
-                Move-Item -Path $File.FullName -Destination $DestPath -Force
-            }
-
-            # --------------------------------------------------------
-            # If Verbose is enabled, output the processed file path
-            # and its final resolved destination path.
-            # --------------------------------------------------------
-            if ($Verbose) {
-                Write-Host "Processed file: $($File.FullName) -> $DestPath"
-            }
-        }
-
-        # ------------------------------------------------------------
-        # Transfer Type: all-files
-        # Purpose :
-        #   Copy or move all files found recursively in the source
-        #   directory, but flatten the directory structure so that 
-        #   all files are placed directly in the destination root.
-        #
-        # Description:
-        #   - Recursively finds every file under the source directory,
-        #     including files in all subfolders.
-        #   - For each file, Get-UniqueDestinationPath ensures that 
-        #     no existing file in the destination is overwritten.
-        #   - The original folder structure is discarded; only the files 
-        #     are copied or moved.
-        #   - Supports both Copy and Move operations.
-        #   - Verbose mode outputs the source file and final destination path.
-        #
-        # Example:
-        #   If a file "logs\2024\report.txt" is found and a file named 
-        #   "report.txt" already exists in the destination root, it will 
-        #   be renamed to "report_1.txt" or higher.
-        #
-        # Notes:
-        #   Uses built-in Get-ChildItem with -Recurse, Copy-Item, and Move-Item.
-        #   Ensures all files end up flat in the destination folder.
-        # ------------------------------------------------------------
-        if ($Verbose) {
-            # Output info about what will happen in this block
-            Write-Host "Transfer Type: all-files - transferring all files recursively, flattened, with collision protection."
-        }
-
-        # Get all files recursively under the source directory
-        $Files = Get-ChildItem -Path $FileSourceDir -File -Recurse
-
-        # Iterate through each file found recursively
-        foreach ($File in $Files) {
-
-            # --------------------------------------------------------
-            # Get a unique destination path for this file to prevent
-            # overwriting an existing file with the same name.
-            # The folder structure is ignored.
-            # --------------------------------------------------------
-            $DestPath = Get-UniqueDestinationPath `
-                -BaseName $File.BaseName `
-                -Extension $File.Extension `
-                -DestinationDir $FileDestinationDir
-
-            # --------------------------------------------------------
-            # Perform the copy or move operation.
-            # --------------------------------------------------------
-            if ($TransferMode -eq "copy") {
-                Copy-Item -Path $File.FullName -Destination $DestPath -Force
-            } elseif ($TransferMode -eq "move") {
-                Move-Item -Path $File.FullName -Destination $DestPath -Force
-            }
-
-            # --------------------------------------------------------
-            # If Verbose is enabled, output the processed file path
-            # and its final resolved destination path.
-            # --------------------------------------------------------
-            if ($Verbose) {
-                Write-Host "Processed file: $($File.FullName) -> $DestPath"
-            }
-        }
-
-        # ------------------------------------------------------------
-        # Transfer Type: all-files-delete-dir
-        # Purpose :
-        #   Recursively copy or move all files in the source directory,
-        #   flatten the structure so that all files end up in the 
-        #   destination root, and delete leftover empty source 
-        #   directories if TransferMode is "move".
-        #
-        # Description:
-        #   - Finds all files recursively in the source directory.
-        #   - Flattens the structure: all files go directly to the 
-        #     destination root, regardless of their original paths.
-        #   - Uses Get-UniqueDestinationPath to ensure that no files 
-        #     at the destination are overwritten.
-        #   - If TransferMode is "move", deletes all empty leftover 
-        #     source directories after files are moved.
-        #   - If TransferMode is "copy", the source directories remain.
-        #   - Verbose mode outputs detailed info for each step.
-        #
-        # Example:
-        #   If "archive\logs\2022\report.txt" exists and "report.txt"
-        #   already exists in the destination root, it will be renamed
-        #   to "report_1.txt". After moving, "archive\logs\2022" will 
-        #   be deleted if empty.
-        #
-        # Notes:
-        #   Uses Get-ChildItem -Recurse, Copy-Item or Move-Item,
-        #   and Remove-Item for directory cleanup.
-        #   Directory deletion is wrapped in try/catch for safety.
-        # ------------------------------------------------------------
-        if ($Verbose) {
-            # Output info about what will happen in this block
-            Write-Host "Transfer Type: all-files-delete-dir - transferring all files recursively, flattened, with collision protection."
-            Write-Host "After transfer, source directories will be deleted only if TransferMode is 'move'."
-        }
-
-        # Get all files recursively under the source directory
-        $Files = Get-ChildItem -Path $FileSourceDir -File -Recurse
-
-        # Iterate through each file found recursively
-        foreach ($File in $Files) {
-
-            # --------------------------------------------------------
-            # Get a unique destination path to prevent overwriting.
-            # Folder structure is ignored, everything goes to the
-            # destination root.
-            # --------------------------------------------------------
-            $DestPath = Get-UniqueDestinationPath `
-                -BaseName $File.BaseName `
-                -Extension $File.Extension `
-                -DestinationDir $FileDestinationDir
-
-            # --------------------------------------------------------
-            # Perform the copy or move operation for each file.
-            # --------------------------------------------------------
-            if ($TransferMode -eq "copy") {
-                Copy-Item -Path $File.FullName -Destination $DestPath -Force
-            } elseif ($TransferMode -eq "move") {
-                Move-Item -Path $File.FullName -Destination $DestPath -Force
-            }
-
-            # --------------------------------------------------------
-            # If Verbose is enabled, output the processed file path
-            # and its final destination path.
-            # --------------------------------------------------------
-            if ($Verbose) {
-                Write-Host "Processed file: $($File.FullName) -> $DestPath"
-            }
-        }
-
-        # ------------------------------------------------------------
-        # If TransferMode is "move", delete leftover empty directories.
-        # ------------------------------------------------------------
-        if ($TransferMode -eq "move") {
-            if ($Verbose) {
-                Write-Host "Deleting leftover source directories since TransferMode is 'move'."
-            }
-
-            # Get all directories under the source recursively
-            $Directories = Get-ChildItem -Path $FileSourceDir -Directory -Recurse
-
-            # Try to remove each directory, safely handle failures
-            foreach ($Dir in $Directories) {
-                try {
-                    Remove-Item -Path $Dir.FullName -Force -Recurse -ErrorAction Stop
-                    if ($Verbose) {
-                        Write-Host "Deleted directory: $($Dir.FullName)"
-                    }
-                } catch {
-                    if ($Verbose) {
-                        Write-Warning "Could not delete directory: $($Dir.FullName). It may not be empty or may be in use."
-                    }
+                # --------------------------------------------------------
+                # If Verbose is enabled, output the processed file path
+                # and its final resolved destination path.
+                # --------------------------------------------------------
+                if ($Verbose) {
+                    Write-Host "Processed file: $($File.FullName) -> $DestPath"
                 }
             }
-        } else {
-            # If in copy mode, do not delete source directories
+		}
+		
+		"all-files" {
+            # ------------------------------------------------------------
+            # Transfer Type: all-files
+            # Purpose :
+            #   Copy or move all files found recursively in the source
+            #   directory, but flatten the directory structure so that 
+            #   all files are placed directly in the destination root.
+            #
+            # Description:
+            #   - Recursively finds every file under the source directory,
+            #     including files in all subfolders.
+            #   - For each file, Get-UniqueDestinationPath ensures that 
+            #     no existing file in the destination is overwritten.
+            #   - The original folder structure is discarded; only the files 
+            #     are copied or moved.
+            #   - Supports both Copy and Move operations.
+            #   - Verbose mode outputs the source file and final destination path.
+            #
+            # Example:
+            #   If a file "logs\2024\report.txt" is found and a file named 
+            #   "report.txt" already exists in the destination root, it will 
+            #   be renamed to "report_1.txt" or higher.
+            #
+            # Notes:
+            #   Uses built-in Get-ChildItem with -Recurse, Copy-Item, and Move-Item.
+            #   Ensures all files end up flat in the destination folder.
+            # ------------------------------------------------------------
             if ($Verbose) {
-                Write-Host "TransferMode is 'copy'. Source directories will not be deleted."
+                # Output info about what will happen in this block
+                Write-Host "Transfer Type: all-files - transferring all files recursively, flattened, with collision protection."
             }
-        }
 
+            # Get all files recursively under the source directory
+            $Files = Get-ChildItem -Path $FileSourceDir -File -Recurse
+
+            # Iterate through each file found recursively
+            foreach ($File in $Files) {
+
+                # --------------------------------------------------------
+                # Get a unique destination path for this file to prevent
+                # overwriting an existing file with the same name.
+                # The folder structure is ignored.
+                # --------------------------------------------------------
+                $DestPath = Get-UniqueDestinationPath `
+                    -BaseName $File.BaseName `
+                    -Extension $File.Extension `
+                    -DestinationDir $FileDestinationDir
+
+                # --------------------------------------------------------
+                # Perform the copy or move operation.
+                # --------------------------------------------------------
+                if ($TransferMode -eq "copy") {
+                    Copy-Item -Path $File.FullName -Destination $DestPath -Force
+                } elseif ($TransferMode -eq "move") {
+                    Move-Item -Path $File.FullName -Destination $DestPath -Force
+                }
+
+                # --------------------------------------------------------
+                # If Verbose is enabled, output the processed file path
+                # and its final resolved destination path.
+                # --------------------------------------------------------
+                if ($Verbose) {
+                        Write-Host "Processed file: $($File.FullName) -> $DestPath"
+                }
+            }
+		}
+		
+		"all-files-delete-dir" {
+            # ------------------------------------------------------------
+            # Transfer Type: all-files-delete-dir
+            # Purpose :
+            #   Recursively copy or move all files in the source directory,
+            #   flatten the structure so that all files end up in the 
+            #   destination root, and delete leftover empty source 
+            #   directories if TransferMode is "move".
+            #
+            # Description:
+            #   - Finds all files recursively in the source directory.
+            #   - Flattens the structure: all files go directly to the 
+            #     destination root, regardless of their original paths.
+            #   - Uses Get-UniqueDestinationPath to ensure that no files 
+            #     at the destination are overwritten.
+            #   - If TransferMode is "move", deletes all empty leftover 
+            #     source directories after files are moved.
+            #   - If TransferMode is "copy", the source directories remain.
+            #   - Verbose mode outputs detailed info for each step.
+            #
+            # Example:
+            #   If "archive\logs\2022\report.txt" exists and "report.txt"
+            #   already exists in the destination root, it will be renamed
+            #   to "report_1.txt". After moving, "archive\logs\2022" will 
+            #   be deleted if empty.
+            #
+            # Notes:
+            #   Uses Get-ChildItem -Recurse, Copy-Item or Move-Item,
+            #   and Remove-Item for directory cleanup.
+            #   Directory deletion is wrapped in try/catch for safety.
+            # ------------------------------------------------------------
+            if ($Verbose) {
+                # Output info about what will happen in this block
+                Write-Host "Transfer Type: all-files-delete-dir - transferring all files recursively, flattened, with collision protection."
+                Write-Host "After transfer, source directories will be deleted only if TransferMode is 'move'."
+            }
+
+            # Get all files recursively under the source directory
+            $Files = Get-ChildItem -Path $FileSourceDir -File -Recurse
+
+            # Iterate through each file found recursively
+            foreach ($File in $Files) {
+
+                # --------------------------------------------------------
+                # Get a unique destination path to prevent overwriting.
+                # Folder structure is ignored, everything goes to the
+                # destination root.
+                # --------------------------------------------------------
+                $DestPath = Get-UniqueDestinationPath `
+                    -BaseName $File.BaseName `
+                    -Extension $File.Extension `
+                    -DestinationDir $FileDestinationDir
+
+                # --------------------------------------------------------
+                # Perform the copy or move operation for each file.
+                # --------------------------------------------------------
+                if ($TransferMode -eq "copy") {
+                    Copy-Item -Path $File.FullName -Destination $DestPath -Force
+                } elseif ($TransferMode -eq "move") {
+                    Move-Item -Path $File.FullName -Destination $DestPath -Force
+                }
+
+                # --------------------------------------------------------
+                # If Verbose is enabled, output the processed file path
+                # and its final destination path.
+                # --------------------------------------------------------
+                if ($Verbose) {
+                    Write-Host "Processed file: $($File.FullName) -> $DestPath"
+                }
+            }
+
+            # ------------------------------------------------------------
+            # If TransferMode is "move", delete leftover empty directories.
+            # ------------------------------------------------------------
+            if ($TransferMode -eq "move") {
+                if ($Verbose) {
+                    Write-Host "Deleting leftover source directories since TransferMode is 'move'."
+                }
+
+                # Get all directories under the source recursively
+                $Directories = Get-ChildItem -Path $FileSourceDir -Directory -Recurse
+
+                # Try to remove each directory, safely handle failures
+                foreach ($Dir in $Directories) {
+                    try {
+                        Remove-Item -Path $Dir.FullName -Force -Recurse -ErrorAction Stop
+                        if ($Verbose) {
+                            Write-Host "Deleted directory: $($Dir.FullName)"
+                        }
+                    } catch {
+                        if ($Verbose) {
+                            Write-Warning "Could not delete directory: $($Dir.FullName). It may not be empty or may be in use."
+                        }
+                    }
+                }
+            } else {
+                # If in copy mode, do not delete source directories
+                if ($Verbose) {
+                        Write-Host "TransferMode is 'copy'. Source directories will not be deleted."
+                }
+            }
+		}
 
         # ------------------------------------------------------------
         # Transfer Type: default
