@@ -56,7 +56,10 @@ param (
     [string]$TransferTypeParam,
 
     [Alias("v", "debug")]
-    [switch]$VerboseParam
+    [switch]$VerboseParam,
+	
+	[Alias("q", "quiet")]
+    [switch]$QuietParam
 )
 
 # ------------------------------------------------------------
@@ -82,10 +85,13 @@ $TransferMode = "copy"
 # Define the transfer type.
 # Controls which files and folders will be processed.
 # Accepts:
-#   "all"       - Transfer entire content including all subfolders and files.
-#   "files"     - Transfer only files directly inside the source directory.
-#   "all-files" - Transfer all files recursively but flatten the directory
-#                 structure in the destination.
+#   "all"               - Transfer entire content including all subfolders and files.
+#   "files"             - Transfer only files directly inside the source directory.
+#   "all-files"         - Transfer all files recursively but flatten the directory
+#                         structure in the destination.
+#   "all-files-delete-dir"
+#                       - Same as "all-files" but deletes leftover empty source
+#                         directories after moving files (only in move mode).
 # Default: "all"
 # ------------------------------------------------------------
 $TransferType = "all"
@@ -96,7 +102,7 @@ $TransferType = "all"
 # Set to $true for verbose output, $false for silent mode.
 # Default: $false
 # ------------------------------------------------------------
-$Verbose = $true  # Set to $true to see outputs for testing
+$Verbose = $true
 
 # ------------------------------------------------------------
 # Override defaults with parameter values if provided
@@ -106,6 +112,7 @@ if ($FileDestinationDirParam) { $FileDestinationDir = $FileDestinationDirParam }
 if ($TransferModeParam) { $TransferMode = $TransferModeParam }
 if ($TransferTypeParam) { $TransferType = $TransferTypeParam }
 if ($VerboseParam.IsPresent) { $Verbose = $true }
+if ($QuietParam.IsPresent) { $Verbose = $false }
 
 # ------------------------------------------------------------
 # Output final settings if verbose
@@ -267,7 +274,6 @@ try {
                 $BaseName = $Item.BaseName
                 $Extension = $Item.Extension
                 if ($Item.PSIsContainer) {
-                    # For folders: no extension
                     $DestPath = Get-UniqueDestinationPath -BaseName $Item.Name -Extension "" -DestinationDir $FileDestinationDir
                 } else {
                     $DestPath = Get-UniqueDestinationPath -BaseName $BaseName -Extension $Extension -DestinationDir $FileDestinationDir
