@@ -85,13 +85,13 @@ param (
 # Define the source directory where the file is located.
 # Must be an absolute path (e.g. "C:\source") or a relative path based on the script's location.
 # ------------------------------------------------------------
-$FileSourceDir = "test_source"
+$FileSourceDir = ""
 
 # ------------------------------------------------------------
 # Define the destination directory where the file will be copied or moved.
 # Must be an absolute path (e.g. "C:\destination") or a relative path based on the script's location.
 # ------------------------------------------------------------
-$FileDestinationDir = "test_destination"
+$FileDestinationDir = ""
 
 # ------------------------------------------------------------
 # Define the transfer mode.
