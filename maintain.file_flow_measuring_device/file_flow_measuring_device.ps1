@@ -32,17 +32,17 @@ Usage Example:
     .\file_flow_measuring_device.ps1 -s "C:\Source" -d "C:\Destination" -m "move" -t "all-files-delete-dir" -v
 
 Parameters:
-    -s, --source           : Source directory path (absolute or relative)
-    -d, --destination      : Destination directory path (absolute or relative)
-    -m, --mode             : Transfer mode ("copy" or "move")
-    -t, --type             : Transfer type:
+    -s, -source           : Source directory path (absolute or relative)
+    -d, -destination      : Destination directory path (absolute or relative)
+    -m, -mode             : Transfer mode ("copy" or "move")
+    -t, -type             : Transfer type:
                                "all"                - Entire structure.
                                "files"              - Only files in root.
                                "all-files"          - All files flattened.
                                "all-files-delete-dir" - Flattened & remove
                                                          empty source dirs.
-    -v, --verbose, --debug : Enable verbose output.
-    --silent, --quiet      : Disable all output messages.
+    -v, -verbose, -debug  : Enable verbose output.
+    -silent               : Disable all output messages.
 
 Dependencies:
     - Requires only built-in PowerShell cmdlets: Copy-Item, Move-Item, Get-ChildItem, Resolve-Path, Remove-Item.
